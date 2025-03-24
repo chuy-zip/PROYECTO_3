@@ -3,3 +3,87 @@ title: "EXPLORACION_CATEGORICAS"
 output: html_document
 ---
 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(dplyr)
+library(kableExtra)
+library(tidyr)
+library(ggplot2)
+```
+
+```{r, include=FALSE}
+data <- read.csv("train.csv")
+```
+
+```{r identificar_variables_cat, echo=FALSE}
+categorical_cols <- sapply(data, function(x) !is.numeric(x))
+categorical_data <- data[, categorical_cols, drop = FALSE]
+
+# Verificar si hay columnas categóricas
+if(ncol(categorical_data) == 0) {
+  stop("No se encontraron variables categóricas en el dataset")
+} else {
+  cat("Variables categóricas encontradas:", ncol(categorical_data), "\n")
+  cat("Nombres:", names(categorical_data), "\n")
+}
+
+```
+
+```{r generar_tablas_frecuencia, echo=FALSE}
+generate_frequency_tables <- function(df) {
+  freq_tables <- list()
+  
+  # generar
+  for(col_name in names(df)) {
+    
+    freq <- df %>%
+      count(!!sym(col_name)) %>%
+      mutate(
+        Porcentaje = round(n / sum(n) * 100, 2),
+        Porcentaje_Acumulado = cumsum(Porcentaje)
+      ) %>%
+      rename(
+        Categoría = !!sym(col_name),
+        Frecuencia = n
+      ) %>%
+      arrange(desc(Frecuencia))
+    
+    # Almacenar en la lista
+    freq_tables[[col_name]] <- freq
+  }
+  
+  return(freq_tables)
+}
+
+# generar las tablas
+freq_tables <- generate_frequency_tables(categorical_data)
+
+```
+
+```{r visualizar_datos, echo=FALSE}
+display_frequency_tables <- function(freq_tables) {
+  for(col_name in names(freq_tables)) {
+    cat("\n=== TABLA DE FRECUENCIA PARA:", col_name, "===\n")
+    
+    print(
+      freq_tables[[col_name]] %>%
+        kable(format = "html", digits = 2) %>%
+        kable_styling(
+          bootstrap_options = c("striped", "hover", "condensed"),
+          full_width = FALSE
+        ) %>%
+        add_header_above(c(" " = 1, " " = 1, "%" = 1, "% Acum." = 1)) %>%
+        column_spec(1, bold = TRUE) %>%
+        row_spec(0, bold = TRUE, color = "white", background = "#3498db")
+    )
+    
+    cat("\n")
+  }
+}
+
+# mostrar
+display_frequency_tables(freq_tables)
+```
+
+
