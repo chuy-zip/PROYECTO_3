@@ -3,3 +3,93 @@ title: "DESCRIPCION_GENERAL_DATOS"
 output: html_document
 ---
 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(dplyr)
+library(kableExtra)
+library(tidyr)
+library(ggplot2)
+```
+
+```{r, include=FALSE}
+data <- read.csv("train.csv")
+```
+
+```{r identificar_variables_num, echo=FALSE}
+
+numeric_cols <- sapply(data, is.numeric)
+numeric_data <- data[, numeric_cols, drop = FALSE]
+
+if(ncol(numeric_data) == 0) {
+  stop("No se encontraron variables numéricas en el dataset")
+} else {
+  cat("Variables numéricas encontradas:", ncol(numeric_data), "\n")
+  cat("Nombres:", names(numeric_data), "\n")
+}
+```
+
+```{r estadisticas_descriptivas, echo=FALSE}
+
+calculate_stats <- function(df) {
+  df %>%
+    pivot_longer(everything(), names_to = "Variable", values_to = "Valor") %>%
+    group_by(Variable) %>%
+    summarise(
+      Media = mean(Valor, na.rm = TRUE),
+      Mediana = median(Valor, na.rm = TRUE),
+      Desv_Estándar = sd(Valor, na.rm = TRUE),
+      Mínimo = min(Valor, na.rm = TRUE),
+      Máximo = max(Valor, na.rm = TRUE),
+      Q1 = quantile(Valor, 0.25, na.rm = TRUE),
+      Q3 = quantile(Valor, 0.75, na.rm = TRUE),
+      IQR = IQR(Valor, na.rm = TRUE),
+      N_NA = sum(is.na(Valor))
+    ) %>%
+    kable(format = "html", digits = 2) %>%
+    kable_styling(bootstrap_options = c("striped", "hover"))
+}
+
+calculate_stats(numeric_data)
+```
+
+```{r visualizar_datos}
+plot_histograms <- function(df) {
+  df_long <- df %>% 
+    pivot_longer(everything(), names_to = "Variable", values_to = "Valor")
+  
+  ggplot(df_long, aes(x = Valor)) +
+    geom_histogram(aes(y = ..density..), bins = 30, fill = "skyblue", color = "black") +
+    geom_density(color = "red", linewidth = 1) +
+    facet_wrap(~Variable, scales = "free") +
+    labs(title = "Distribución de variables numéricas", 
+         x = "Valor", y = "Densidad") +
+    theme_minimal()
+}
+
+plot_histograms(numeric_data)
+```
+
+```{r analisis_correlacion}
+if(ncol(numeric_data) > 1) {
+  # Matriz de correlación
+  cor_matrix <- round(cor(numeric_data, use = "complete.obs"), 2)
+  
+  # Visualización de correlación
+  corrplot::corrplot(cor_matrix, method = "color", type = "upper", 
+                     tl.col = "black", tl.srt = 45, 
+                     addCoef.col = "black", number.cex = 0.7)
+  
+  # Heatmap de correlación
+  ggplot(data = reshape2::melt(cor_matrix), 
+         aes(x = Var1, y = Var2, fill = value)) +
+    geom_tile() +
+    geom_text(aes(label = value), color = "black", size = 3) +
+    scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+                        midpoint = 0, limit = c(-1,1)) +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+    labs(title = "Matriz de correlación", x = "", y = "", fill = "Correlación")
+}
+```
+
