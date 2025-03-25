@@ -14,6 +14,7 @@ library(ggplot2)
 library(hopkins)
 library(factoextra) 
 library(cluster)
+library(tidytext)
 ```
 
 ```{r, include=FALSE}
@@ -160,4 +161,86 @@ fviz_cluster(km, data = variables_numericas, geom = "point", ellipse.type = "nor
 data$Cluster <- as.factor(km$cluster)
 # Ver las primeras filas de la tabla con la nueva columna de clusters
 head(data)
+```
+
+# Graficos relevantes por grupo
+
+```{r graficos_grupales_clustering, echo=FALSE}
+# Gráfico de densidad de edad por cluster
+ggplot(data, aes(x = Edadif, fill = Cluster)) +
+  geom_density(alpha = 0.6) +
+  scale_fill_brewer(palette = "Set1") +
+  labs(title = "Distribución de Edad por Cluster",
+       x = "Edad del difunto",
+       y = "Densidad") +
+  theme_minimal() +
+  facet_wrap(~Cluster, ncol = 1) +
+  theme(legend.position = "none") +
+  coord_cartesian(xlim = c(0, 100))  # Ajusta estos valores según tus datos
+
+# Top 5 causas de defunción por cluster
+data %>%
+  group_by(Cluster, Caudef) %>%
+  summarise(n = n()) %>%
+  arrange(Cluster, desc(n)) %>%
+  group_by(Cluster) %>%
+  slice_max(n, n = 5) %>%
+  ggplot(aes(x = reorder_within(Caudef, n, Cluster), y = n, fill = Cluster)) +
+  geom_col() +
+  scale_x_reordered() +
+  scale_fill_brewer(palette = "Set1") +
+  coord_flip() +
+  labs(title = "Top 5 Causas de Defunción por Cluster",
+       x = "",
+       y = "Frecuencia") +
+  theme_minimal() +
+  facet_wrap(~Cluster, scales = "free_y") +
+  theme(legend.position = "none")
+
+# depocu con codigos numericos
+data %>%
+  group_by(Cluster, Depocu) %>%
+  summarise(n = n(), .groups = 'drop') %>%
+  group_by(Cluster) %>%
+  arrange(desc(n)) %>%
+  slice_head(n = 10) %>%
+  ggplot(aes(x = reorder(as.factor(Depocu), n), y = n, fill = Cluster)) +
+  geom_col() +
+  scale_fill_brewer(palette = "Set1") +
+  coord_flip() +
+  labs(title = "Top 10 Departamentos de Ocurrencia por Cluster",
+       x = "Código de Departamento",
+       y = "Frecuencia") +
+  theme_minimal() +
+  facet_wrap(~Cluster, scales = "free_y") +
+  theme(legend.position = "none")
+
+data %>%
+  ggplot(aes(x = as.factor(Sexo), fill = Cluster)) +
+  geom_bar(position = "dodge") +
+  scale_fill_brewer(palette = "Set1") +
+  labs(title = "Distribución por Sexo y Cluster",
+       x = "Código de Sexo",
+       y = "Conteo") +
+  theme_minimal() +
+  facet_wrap(~Cluster) +
+  geom_text(stat = 'count', aes(label = ..count..), 
+            position = position_dodge(width = 1), vjust = -0.5)
+
+data %>%
+  group_by(Cluster, Asist) %>%
+  summarise(n = n(), .groups = 'drop') %>%
+  group_by(Cluster) %>%
+  arrange(desc(n)) %>%
+  slice_head(n = 5) %>%
+  ggplot(aes(x = reorder(as.factor(Asist), n), y = n, fill = Cluster)) +
+  geom_col() +
+  scale_fill_brewer(palette = "Set1") +
+  coord_flip() +
+  labs(title = "Top 5 Códigos de Asistencia Médica por Cluster",
+       x = "Código de Asistencia",
+       y = "Frecuencia") +
+  theme_minimal() +
+  facet_wrap(~Cluster, scales = "free_y") +
+  theme(legend.position = "none")
 ```
