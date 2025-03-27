@@ -1,4 +1,59 @@
 ---
-title: "DESCRIPCION_GENERAL_DATOS"
+title: "Descripción General del conjunto de datos."
 output: html_document
+date: "2025-03-25"
 ---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(knitr)
+library(kableExtra)
+```
+
+## Carga de Datos
+```{r, include=FALSE}
+data <- read.csv("defunciones2022.csv")
+```
+
+## Descripción General del Conjunto de Datos
+
+### Cantidad de Variables y Observaciones
+```{r, echo=FALSE}
+cantidad_variables <- ncol(data)
+cantidad_observaciones <- nrow(data)
+cat("Cantidad de variables:", cantidad_variables, "\n")
+cat("Cantidad de observaciones:", cantidad_observaciones, "\n")
+```
+
+### Significado y Tipo de Cada Variable
+```{r, echo=FALSE}
+variables_info <- data.frame(
+  Variable = names(data),
+  Tipo = sapply(data, class),
+  Descripcion = c(
+    "Departamento registro (ID numérico)", "Municipio registro (ID numérico)", "Mes registro", "Año registro",
+    "Departamento ocurrencia (ID numérico)", "Municipio ocurrencia (ID numérico)", "Sexo difunto", "Día ocurrencia",
+    "Mes ocurrencia", "Año ocurrencia", "Edad difunto", "Periodo edad difunto",
+    "Pueblo pertenencia (ID numérico)", "Estado civil difunto (ID numérico)", "Escolaridad difunto (ID numérico)",
+    "Ocupación difunto (ID numérico)", "País nacimiento difunto (ID numérico)", "Departamento nacimiento difunto (ID numérico)",
+    "Municipio nacimiento difunto (ID numérico)", "Nacionalidad difunto (ID numérico)", "País residencia difunto (ID numérico)",
+    "Departamento residencia difunto (ID numérico)", "Municipio residencia difunto (ID numérico)",
+    "Causa defunción (ID numérico)", "Asistencia recibida", "Sitio ocurrencia", "Certificador defunción"
+  )
+)
+kable(variables_info, caption = "Descripción de las Variables", align = "c") %>%
+  kable_styling(full_width = FALSE)
+```
+
+## Ejemplo de Identificadores Numéricos
+Para entender cómo funcionan los identificadores numéricos en el conjunto de datos, a continuación se muestra un ejemplo de los códigos numéricos de departamentos y su significado:
+
+```{r, echo=FALSE}
+ejemplo_paises <- data.frame(
+  Codigo_Pais = c(1, 2, 3, 4, 5),
+  Nombre_Pais = c("Guatemala", "El Progreso", "Sacatepequez", "Chimaltengango", "Escuintla")
+)
+kable(ejemplo_paises, caption = "Ejemplo de Identificadores Numéricos para Países", align = "c") %>%
+  kable_styling(full_width = FALSE)
+```
