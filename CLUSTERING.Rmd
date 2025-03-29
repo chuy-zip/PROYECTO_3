@@ -161,7 +161,7 @@ plot(1:10, wss, type="b", xlab="Number of Clusters",  ylab="Within groups sum of
 ```
 
 ```{r clustering_kmeans, echo=FALSE}
-k_optimo <- 2
+k_optimo <- 3
 
 # Aplicar K-Means
 set.seed(123)
@@ -172,9 +172,11 @@ fviz_cluster(km, data = variables_numericas, geom = "point", ellipse.type = "nor
 ```
 
 ```{r clustering_eval_silueta, echo=FALSE}
-#silkm <- silhouette(km$cluster, dist(variables_numericas))
-#silueta_promedio <- mean(silkm[, 3])
-#print(paste("Coeficiente de silueta promedio:", silueta_promedio))
+set.seed(123)
+muestra <- variables_numericas[sample(nrow(variables_numericas), size = 10000), ]  # ajustar 
+silkm_muestra <- silhouette(km$cluster[sample(length(km$cluster), 10000)], dist(muestra))
+mean(silkm_muestra[, 3])
+fviz_silhouette(silkm_muestra) + coord_flip()  # grafico
 ```
 
 ```{r analisis_cluster_en_data, echo=FALSE}
@@ -356,4 +358,25 @@ data %>%
   theme_minimal() +
   scale_y_continuous(labels = scales::percent)
 
+```
+
+```{r defunciones_poranio_cluster}
+top_causas <- data %>%
+  group_by(Cluster, year, Caudef) %>%
+  summarise(n = n(), .groups = 'drop') %>%
+  group_by(Cluster, year) %>%
+  slice_max(n, n = 1) %>%  # agarrarmos la cuasa mas frecuente para cada anio
+  ungroup()
+
+ggplot(top_causas, aes(x = as.factor(year), y = n, fill = Caudef)) +
+  geom_col() +
+  scale_fill_brewer(palette = "Set2", name = "Causa de defunción") +
+  labs(
+    title = "Causa de defunción más frecuente por Cluster y Año",
+    x = "Año",
+    y = "Número de defunciones"
+  ) +
+  theme_minimal() +
+  facet_wrap(~Cluster, scales = "free_y") +  
+  theme(axis.text.x = element_text(angle = -90, hjust = 0, vjust = 0.3, size = 8))
 ```
