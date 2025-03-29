@@ -8,7 +8,7 @@ def reemplazar_valores_vacios(df):
     df_clean['Mnadif'] = df_clean['Mnadif'].fillna('9999')
     
     # Reemplazar NA en Escodif con '9' (como string)
-    df_clean['Escodif'] = df_clean['Escodif'].fillna('9')
+    df_clean['Escodif'] = df_clean['Escodif'].fillna(9).astype(int)
     
     return df_clean
 

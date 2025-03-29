@@ -30,4 +30,8 @@ def contar_valores_vacios(df):
 df = pd.read_csv("defunciones_filtradas_categorizadas.csv")
 print(df.shape)
 
+valores_unicos = df['Escodif'].unique()
+
+print(valores_unicos)
+
 print(contar_valores_vacios(df))

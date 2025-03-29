@@ -462,6 +462,8 @@ municipios = {
 def safe_map(series, mapping_dict, default="Desconocido"):
     return series.astype(str).map(mapping_dict).fillna(default)
 
+#la columna Escodif (escolaridad del difunto), tiene algunos valores 
+
 # Aplicar los reemplazos
 df['Asist'] = safe_map(df['Asist'], Asist_values, "Ignorado")
 df['Ecidif'] = safe_map(df['Ecidif'], Ecidif_values, "Ignorado")
