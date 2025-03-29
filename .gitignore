@@ -47,3 +47,5 @@ po/*~
 
 # RStudio Connect folder
 rsconnect/
+
+**/defunciones_filtradas_categorizadas.csv

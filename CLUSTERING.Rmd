@@ -1,0 +1,359 @@
+---
+title: "EXPLORACION_NUMERICAS"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(dplyr)
+library(kableExtra)
+library(tidyr)
+library(ggplot2)
+library(hopkins)
+library(factoextra) 
+library(cluster)
+library(tidytext)
+```
+
+```{r, include=FALSE}
+#data <- read.csv("defunciones_filtradas.csv")
+
+#estos son los mismos datos, con la diferencia de que las variables categoricas ya aparecen con su respectivo nombre en lugar de ID's
+data <- read.csv("defunciones_filtradas_categorizadas.csv")
+```
+
+```{r testing}
+print(head(data,10))
+```
+
+```{r identificar_variables_num, echo=FALSE}
+
+# Antes de limpiar
+cat("Registros totales:", nrow(data), "\n")
+cat("Registros con edad desconocida (999):", sum(data$Edadif == 999), 
+    paste0("(", round(mean(data$Edadif == 999)*100, 1), "%)"), "\n")
+
+# Después de limpiar
+data <- data %>% filter(Edadif != 999)
+cat("Registros válidos conservados:", nrow(data), "\n")
+
+#quitar vairbales que puedan estar estorbando o sean redundantes
+data <- data %>%
+  select(-"Añoreg", -"Mesreg")
+
+numeric_cols <- sapply(data, is.numeric)
+numeric_data <- data[, numeric_cols, drop = FALSE]
+
+if(ncol(numeric_data) == 0) {
+  stop("No se encontraron variables numéricas en el dataset")
+} else {
+  cat("Variables numéricas encontradas:", ncol(numeric_data), "\n")
+  cat("Nombres:", names(numeric_data), "\n")
+}
+```
+
+```{r estadisticas_descriptivas, echo=FALSE}
+
+calculate_stats <- function(df) {
+  df %>%
+    pivot_longer(everything(), names_to = "Variable", values_to = "Valor") %>%
+    group_by(Variable) %>%
+    summarise(
+      Media = mean(Valor, na.rm = TRUE),
+      Mediana = median(Valor, na.rm = TRUE),
+      Desv_Estándar = sd(Valor, na.rm = TRUE),
+      Mínimo = min(Valor, na.rm = TRUE),
+      Máximo = max(Valor, na.rm = TRUE),
+      Q1 = quantile(Valor, 0.25, na.rm = TRUE),
+      Q3 = quantile(Valor, 0.75, na.rm = TRUE),
+      IQR = IQR(Valor, na.rm = TRUE),
+      N_NA = sum(is.na(Valor))
+    ) %>%
+    kable(format = "html", digits = 2) %>%
+    kable_styling(bootstrap_options = c("striped", "hover"))
+}
+
+calculate_stats(numeric_data)
+```
+
+```{r visualizar_datos, echo=FALSE}
+plot_histograms <- function(df) {
+  df_long <- df %>% 
+    pivot_longer(everything(), names_to = "Variable", values_to = "Valor")
+  
+  ggplot(df_long, aes(x = Valor)) +
+    geom_histogram(aes(y = ..density..), bins = 30, fill = "skyblue", color = "black") +
+    geom_density(color = "red", linewidth = 1) +
+    facet_wrap(~Variable, scales = "free") +
+    labs(title = "Distribución de variables numéricas", 
+         x = "Valor", y = "Densidad") +
+    theme_minimal()
+}
+
+plot_histograms(numeric_data)
+```
+
+```{r analisis_correlacion, echo=FALSE}
+if(ncol(numeric_data) > 1) {
+  # Matriz de correlación
+  cor_matrix <- round(cor(numeric_data, use = "complete.obs"), 2)
+  
+  # ver de correlación
+  corrplot::corrplot(cor_matrix, method = "color", type = "upper", 
+                     tl.col = "black", tl.srt = 45, 
+                     addCoef.col = "black", number.cex = 0.7)
+  
+  # Heatmap
+  ggplot(data = reshape2::melt(cor_matrix), 
+         aes(x = Var1, y = Var2, fill = value)) +
+    geom_tile() +
+    geom_text(aes(label = value), color = "black", size = 3) +
+    scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+                        midpoint = 0, limit = c(-1,1)) +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+    labs(title = "Matriz de correlación", x = "", y = "", fill = "Correlación")
+}
+```
+
+# Relaciones entre variables (clustering)
+
+## Estadistico de Hopkins
+```{r estadistico_hopkins, echo=FALSE}
+numeric_cols <- sapply(data, is.numeric)
+numeric_data <- data[, numeric_cols, drop = FALSE]
+variables_numericas <- na.omit(numeric_data)
+#quitar vairbales que puedan estar estorbando o sean redundantes
+#variables_numericas <- variables_numericas %>%
+#  select(-"Añoocu")
+
+data <- data[complete.cases(data[, numeric_cols]), ]
+
+
+dim(variables_numericas)
+dim(data)
+set.seed(123)
+
+muestra <- min(1000, nrow(variables_numericas))
+
+# 3. Tomar muestra aleatoria de los datos
+set.seed(123)
+muestra_indices <- sample(nrow(variables_numericas), muestra)
+datos_muestra <- variables_numericas[muestra_indices, ]
+
+# 4. Calcular Hopkins con la muestra
+hopkins_stat <- hopkins(datos_muestra)
+
+# Mostrar el resultado
+print(paste("Estadistico de Hopkins:", hopkins_stat))
+
+```
+
+## Grafico de codo
+```{r Grafico_codo, echo=FALSE}
+wss=0
+set.seed(123)
+for (i in 1:10) 
+  wss[i] <- sum(kmeans(variables_numericas, centers=i)$withinss)
+
+plot(1:10, wss, type="b", xlab="Number of Clusters",  ylab="Within groups sum of squares")
+```
+
+```{r clustering_kmeans, echo=FALSE}
+k_optimo <- 2
+
+# Aplicar K-Means
+set.seed(123)
+km <- kmeans(variables_numericas, centers = k_optimo, iter.max =100)
+
+# Visualizar los clusters con fviz_cluster
+fviz_cluster(km, data = variables_numericas, geom = "point", ellipse.type = "norm")
+```
+
+```{r clustering_eval_silueta, echo=FALSE}
+#silkm <- silhouette(km$cluster, dist(variables_numericas))
+#silueta_promedio <- mean(silkm[, 3])
+#print(paste("Coeficiente de silueta promedio:", silueta_promedio))
+```
+
+```{r analisis_cluster_en_data, echo=FALSE}
+data$Cluster <- as.factor(km$cluster)
+# Ver las primeras filas de la tabla con la nueva columna de clusters
+head(data)
+```
+
+# Graficos relevantes por grupo
+```{r prueba}
+n_distinct(data$Escodif)
+```
+
+```{r graficos_grupales_clustering, echo=FALSE}
+# Gráfico de densidad de edad por cluster
+ggplot(data, aes(x = Edadif, fill = Cluster)) +
+  geom_density(alpha = 0.6) +
+  scale_fill_brewer(palette = "Set1") +
+  labs(title = "Distribución de Edad por Cluster",
+       x = "Edad del difunto",
+       y = "Densidad") +
+  theme_minimal() +
+  facet_wrap(~Cluster, ncol = 1) +
+  theme(legend.position = "none") +
+  coord_cartesian(xlim = c(0, 120))  # Ajusta estos valores según tus datos
+
+# Top 5 causas de defunción por cluster
+data %>%
+  group_by(Cluster, Caudef) %>%
+  summarise(n = n()) %>%
+  arrange(Cluster, desc(n)) %>%
+  group_by(Cluster) %>%
+  slice_max(n, n = 10) %>%
+  ggplot(aes(x = reorder_within(Caudef, n, Cluster), y = n, fill = Cluster)) +
+  geom_col() +
+  scale_x_reordered() +
+  scale_fill_brewer(palette = "Set1") +
+  coord_flip() +
+  labs(title = "Top 10 Causas de Defunción por Cluster",
+       x = "",
+       y = "Frecuencia") +
+  theme_minimal() +
+  facet_wrap(~Cluster, scales = "free_y") +
+  theme(legend.position = "none")
+
+# depocu con codigos numericos
+data %>%
+  group_by(Cluster, Depocu) %>%
+  summarise(n = n(), .groups = 'drop') %>%
+  group_by(Cluster) %>%
+  arrange(desc(n)) %>%
+  slice_head(n = 10) %>%
+  ggplot(aes(x = reorder(as.factor(Depocu), n), y = n, fill = Cluster)) +
+  geom_col() +
+  scale_fill_brewer(palette = "Set1") +
+  coord_flip() +
+  labs(title = "Top 10 Departamentos de Ocurrencia por Cluster",
+       x = "Departamento",
+       y = "Frecuencia") +
+  theme_minimal() +
+  facet_wrap(~Cluster, scales = "free_y") +
+  theme(legend.position = "none")
+
+data %>%
+  ggplot(aes(x = as.factor(Sexo), fill = Cluster)) +
+  geom_bar(position = "dodge") +
+  scale_fill_brewer(palette = "Set1") +
+  labs(title = "Distribución por Sexo y Cluster",
+       x = "Sexo",
+       y = "Conteo") +
+  theme_minimal() +
+  facet_wrap(~Cluster) +
+  geom_text(stat = 'count', aes(label = ..count..), 
+            position = position_dodge(width = 1), vjust = -0.5)
+
+data %>%
+  group_by(Cluster, Asist) %>%
+  summarise(n = n(), .groups = 'drop') %>%
+  group_by(Cluster) %>%
+  arrange(desc(n)) %>%
+  slice_head(n = 5) %>%
+  ggplot(aes(x = reorder(as.factor(Asist), n), y = n, fill = Cluster)) +
+  geom_col() +
+  scale_fill_brewer(palette = "Set1") +
+  coord_flip() +
+  labs(title = "Top 5 Asistencia por Cluster",
+       x = "Código de Asistencia",
+       y = "Frecuencia") +
+  theme_minimal() +
+  facet_wrap(~Cluster, scales = "free_y") +
+  theme(legend.position = "none")
+
+#defunciones por año por cluster (esta se debe hacer con la columna Mesocu)
+# Convertir Mesocu a nombre de mes (opcional)
+data <- data %>%
+  mutate(Mes_nombre = factor(month.abb[Mesocu], levels = month.abb))
+
+# Gráfico de barras por mes
+data %>%
+  ggplot(aes(x = Mes_nombre, fill = Cluster)) +
+  geom_bar(position = "dodge") +
+  scale_fill_brewer(palette = "Set1") +
+  labs(
+    title = "Defunciones por Mes y Cluster",
+    x = "Mes",
+    y = "Número de defunciones"
+  ) +
+  theme_minimal() +
+  facet_wrap(~Cluster, scales = "free_y") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+#defunciones por mes por cluster (esta se debe hacer con la columna year)
+data %>%
+  ggplot(aes(x = as.factor(year), fill = Cluster)) +
+  geom_bar(position = "dodge") +
+  scale_fill_brewer(palette = "Set1") +
+  labs(
+    title = "Defunciones por Año y Cluster",
+    x = "Año",
+    y = "Número de defunciones"
+  ) +
+  theme_minimal() +
+  facet_wrap(~Cluster, scales = "free_y") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+data %>%
+  group_by(Cluster, Ocur) %>%
+  summarise(n = n(), .groups = 'drop') %>%
+  group_by(Cluster) %>%
+  arrange(desc(n)) %>%
+  slice_head(n = 5) %>%  # Top 5 lugares por cluster
+  ggplot(aes(x = reorder_within(Ocur, n, Cluster), y = n, fill = Cluster)) +
+  geom_col() +
+  scale_x_reordered() +
+  scale_fill_brewer(palette = "Set1") +
+  coord_flip() +
+  labs(
+    title = "Top 5 Lugares de Ocurrencia por Cluster",
+    x = "Lugar de ocurrencia",
+    y = "Frecuencia"
+  ) +
+  theme_minimal() +
+  facet_wrap(~Cluster, scales = "free_y") +
+  theme(legend.position = "none")
+
+# Opción 1: Gráfico de barras clásico
+data %>%
+  ggplot(aes(x = as.factor(Ecidif), fill = Cluster)) +
+  geom_bar(position = "dodge") +
+  scale_fill_brewer(palette = "Set1") +
+  labs(
+    title = "Distribución de Estado Civil por Cluster",
+    x = "Estado civil",
+    y = "Frecuencia"
+  ) +
+  theme_minimal() +
+  facet_wrap(~Cluster, scales = "free_x") +  # Escalas libres en X para etiquetas largas
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Ordenar niveles de escolaridad (ajusta según tus datos)
+# LA COLUMNA ESCODIF TIENEN ERROR, tiene valores con punto decimal, en lugar de solo enteros
+niveles_escolaridad <- c("Ninguno", "Primaria", "Secundaria", "Básica", "Diversificado", "Universitario", "Post Grado", "Ignorado")
+
+
+data <- data %>%
+  mutate(Escodif_ordenado = factor(Escodif, levels = niveles_escolaridad))
+
+# Gráfico de barras apiladas (proporción)
+data %>%
+  ggplot(aes(x = Cluster, fill = Escodif_ordenado)) +
+  geom_bar(position = "fill") +
+  scale_fill_brewer(palette = "Paired") +
+  labs(
+    title = "Nivel de Escolaridad por Cluster (Proporción)",
+    x = "Cluster",
+    y = "Proporción",
+    fill = "Escolaridad"
+  ) +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::percent)
+
+```
