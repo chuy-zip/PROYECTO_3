@@ -13,7 +13,7 @@ library(kableExtra)
 
 ## Carga de Datos
 ```{r, include=FALSE}
-data <- read.csv("defunciones2022.csv")
+data <- read.csv("defunciones_filtradas.csv")
 ```
 
 ## Descripción General del Conjunto de Datos
