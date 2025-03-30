@@ -1,100 +1,108 @@
 ---
-title: "EXPLORACION_NUMERICAS"
+title: "Exploración de Variables Cuantitativas"
 output: html_document
 ---
 
-
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-library(knitr)
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
 library(dplyr)
-library(kableExtra)
-library(tidyr)
 library(ggplot2)
-library(hopkins)
-library(factoextra) 
-library(cluster)
-library(tidytext)
+library(tidyr)
+library(knitr)
+library(kableExtra)
+library(corrplot)
 ```
 
-```{r, include=FALSE}
-data <- read.csv("defunciones2022.csv")
+## 1. Carga de Datos
+```{r}
+data <- read.csv("defunciones_filtradas.csv")
 ```
 
-```{r identificar_variables_num, echo=FALSE}
-
-numeric_cols <- sapply(data, is.numeric)
-numeric_data <- data[, numeric_cols, drop = FALSE]
-
-if(ncol(numeric_data) == 0) {
-  stop("No se encontraron variables numéricas en el dataset")
-} else {
-  cat("Variables numéricas encontradas:", ncol(numeric_data), "\n")
-  cat("Nombres:", names(numeric_data), "\n")
-}
+## 2. Resumen Estadístico de Variables Cuantitativas
+```{r}
+resumen <- data %>%
+  select(Añoreg, Diaocu, Edadif, Mesocu, Mesreg, year) %>%
+  summary()
+kable(resumen, caption = "Resumen Estadístico de Variables Cuantitativas")
 ```
 
-```{r estadisticas_descriptivas, echo=FALSE}
-
-calculate_stats <- function(df) {
-  df %>%
-    pivot_longer(everything(), names_to = "Variable", values_to = "Valor") %>%
-    group_by(Variable) %>%
-    summarise(
-      Media = mean(Valor, na.rm = TRUE),
-      Mediana = median(Valor, na.rm = TRUE),
-      Desv_Estándar = sd(Valor, na.rm = TRUE),
-      Mínimo = min(Valor, na.rm = TRUE),
-      Máximo = max(Valor, na.rm = TRUE),
-      Q1 = quantile(Valor, 0.25, na.rm = TRUE),
-      Q3 = quantile(Valor, 0.75, na.rm = TRUE),
-      IQR = IQR(Valor, na.rm = TRUE),
-      N_NA = sum(is.na(Valor))
-    ) %>%
-    kable(format = "html", digits = 2) %>%
-    kable_styling(bootstrap_options = c("striped", "hover"))
-}
-
-calculate_stats(numeric_data)
+## 3. Histogramas de Variables Cuantitativas
+```{r}
+data %>% 
+  select(Añoreg, Diaocu, Edadif, Mesocu, Mesreg, year) %>% 
+  gather(key = "Variable", value = "Valor") %>%
+  ggplot(aes(x = Valor)) +
+  geom_histogram(bins = 30, fill = "steelblue", color = "black", alpha = 0.7) +
+  facet_wrap(~ Variable, scales = "free") +
+  theme_minimal() +
+  ggtitle("Histogramas de Variables Cuantitativas")
 ```
 
-```{r visualizar_datos, echo=FALSE}
-plot_histograms <- function(df) {
-  df_long <- df %>% 
-    pivot_longer(everything(), names_to = "Variable", values_to = "Valor")
+### Histograma Específico de Edadif (0 a 100 años)
+```{r}
+ggplot(data, aes(x = Edadif)) +
+  geom_histogram(bins = 30, fill = "darkred", color = "black", alpha = 0.7) +
+  xlim(0, 100) +
+  theme_minimal() +
+  ggtitle("Distribución de Edades de los Difuntos")
+```
+
+## 4. Boxplots para Detección de Outliers
+```{r}
+data %>% 
+  select(Añoreg, Diaocu, Edadif, Mesocu, Mesreg, year) %>% 
+  gather(key = "Variable", value = "Valor") %>%
+  ggplot(aes(x = Variable, y = Valor)) +
+  geom_boxplot(fill = "lightblue", color = "black") +
+  theme_minimal() +
+  ggtitle("Boxplots para Detección de Outliers")
+```
+
+## Análisis de resultados de las gráficas: 
+# Análisis de Datos de Defunciones Registradas
   
-  ggplot(df_long, aes(x = Valor)) +
-    geom_histogram(aes(y = ..density..), bins = 30, fill = "skyblue", color = "black") +
-    geom_density(color = "red", linewidth = 1) +
-    facet_wrap(~Variable, scales = "free") +
-    labs(title = "Distribución de variables numéricas", 
-         x = "Valor", y = "Densidad") +
-    theme_minimal()
-}
+  A continuación, se presentan los resultados clave del análisis de las variables seleccionadas del conjunto de datos de defunciones registradas:
+  
+## 1. Año de Registro (Añoreg) y Año de Ocurrencia (year):
+  
+  * **Tendencia central y dispersión:**
+      * La mediana para ambos años (Añoreg y year) es 2016, lo que indica que la mayoría de los registros se concentran entre 2013 y 2020.
+      * El rango de datos abarca desde 2009 hasta 2023.
+  * **Anomalías:**
+      * Se identificaron valores atípicos que afectan significativamente la media, especialmente en Añoreg, donde el promedio es 1893, un valor que carece de lógica en el contexto actual.
+  
+## 2. Día de Ocurrencia (Diaocu):
+  
+  * **Distribución:**
+      * La media (15.67) y la mediana (16) son muy similares, lo que sugiere una distribución relativamente uniforme de las defunciones a lo largo de los días del mes.
+  * **Conclusión:**
+      * No se observaron anomalías relevantes en esta variable.
+  
+## 3. Edad del Difunto (Edadif):
+  
+  * **Valores extremos y distribución:**
+      * Se detectó un valor máximo de 999, que se considera un error de ingreso de datos.
+      * La mediana de 61 años indica que la mitad de las defunciones ocurrieron en personas de 61 años o menos.
+      * El primer cuartil (33 años) y el tercer cuartil (78 años) muestran que la mayoría de las defunciones se concentran en adultos de mediana edad y personas mayores.
+      * La media es de 61.53, muy parecida a la mediana, lo que muestra una distribucion simetrica, con la excepcion de los valores atípicos.
+  
+## 4. Mes de Ocurrencia (Mesocu) y Mes de Registro (Mesreg):
+  
+  * **Rango y distribución:**
+      * Ambas variables varían dentro del rango esperado de 1 a 12, correspondiente a los meses del año.
+      * La media y la mediana se sitúan alrededor de 6-7, lo que indica una distribución homogénea de defunciones y registros a lo largo del año.
+      
 
-plot_histograms(numeric_data)
+## 5. Matriz de Correlaciones
+```{r}
+corr_matrix <- cor(data %>% select(Añoreg, Diaocu, Edadif, Mesocu, Mesreg, year), use = "complete.obs")
+corrplot(corr_matrix, method = "circle", type = "upper", tl.col = "black", tl.srt = 45)
 ```
 
-```{r analisis_correlacion, echo=FALSE}
-if(ncol(numeric_data) > 1) {
-  # Matriz de correlación
-  cor_matrix <- round(cor(numeric_data, use = "complete.obs"), 2)
-  
-  # ver de correlación
-  corrplot::corrplot(cor_matrix, method = "color", type = "upper", 
-                     tl.col = "black", tl.srt = 45, 
-                     addCoef.col = "black", number.cex = 0.7)
-  
-  # Heatmap
-  ggplot(data = reshape2::melt(cor_matrix), 
-         aes(x = Var1, y = Var2, fill = value)) +
-    geom_tile() +
-    geom_text(aes(label = value), color = "black", size = 3) +
-    scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
-                        midpoint = 0, limit = c(-1,1)) +
-    theme_minimal() +
-    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
-    labs(title = "Matriz de correlación", x = "", y = "", fill = "Correlación")
-}
+## 6. Análisis de Valores Faltantes
+```{r}
+nulos <- colSums(is.na(data))
+kable(data.frame(Variable = names(nulos), Valores_Faltantes = nulos), caption = "Valores Faltantes en el Dataset")
 ```
 
+---
