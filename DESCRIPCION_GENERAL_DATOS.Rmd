@@ -9,6 +9,7 @@ knitr::opts_chunk$set(echo = TRUE)
 library(dplyr)
 library(knitr)
 library(kableExtra)
+library(ggplot2)
 ```
 
 ## Carga de Datos
@@ -19,6 +20,7 @@ data <- read.csv("defunciones_filtradas.csv")
 ## Descripción General del Conjunto de Datos
 
 ### Cantidad de Variables y Observaciones
+Se procedió a crear un dataset con estas variables, desde el año 2009 hasta el 2022, obtiendo al rededor de 1,000,000 de observaciones en total y 19 variables.  
 ```{r, echo=FALSE}
 cantidad_variables <- ncol(data)
 cantidad_observaciones <- nrow(data)
@@ -29,21 +31,109 @@ cat("Cantidad de observaciones:", cantidad_observaciones, "\n")
 ### Significado y Tipo de Cada Variable
 ```{r, echo=FALSE}
 variables_info <- data.frame(
-  Variable = names(data),
-  Tipo = sapply(data, class),
-  Descripcion = c(
-    "Departamento registro (ID numérico)", "Municipio registro (ID numérico)", "Mes registro", "Año registro",
-    "Departamento ocurrencia (ID numérico)", "Municipio ocurrencia (ID numérico)", "Sexo difunto", "Día ocurrencia",
-    "Mes ocurrencia", "Año ocurrencia", "Edad difunto", "Periodo edad difunto",
-    "Pueblo pertenencia (ID numérico)", "Estado civil difunto (ID numérico)", "Escolaridad difunto (ID numérico)",
-    "Ocupación difunto (ID numérico)", "País nacimiento difunto (ID numérico)", "Departamento nacimiento difunto (ID numérico)",
-    "Municipio nacimiento difunto (ID numérico)", "Nacionalidad difunto (ID numérico)", "País residencia difunto (ID numérico)",
-    "Departamento residencia difunto (ID numérico)", "Municipio residencia difunto (ID numérico)",
-    "Causa defunción (ID numérico)", "Asistencia recibida", "Sitio ocurrencia", "Certificador defunción"
-  )
+  Nombre = c("Asist", "Añoreg", "Caudef", "Depocu", "Depreg", "Diaocu",
+             "Dnadif", "Dredif", "Ecidif", "Edadif", "Mesocu", "Mesreg",
+             "Mredif", "Ocur", "Perdif", "Sexo", "Mnadif", "Escodif"),
+  
+  Significado = c("Asistencia recibida", 
+                  "Año de registro", 
+                  "Causa de defunción (ID)", 
+                  "Departamento de ocurrencia", 
+                  "Departamento de registro", 
+                  "Día de ocurrencia", 
+                  "Departamento de nacimiento", 
+                  "Departamento de residencia", 
+                  "Estado civil", 
+                  "Edad del difunto", 
+                  "Mes de ocurrencia", 
+                  "Mes de registro", 
+                  "Municipio de residencia", 
+                  "Sitio de ocurrencia (urbano/rural)", 
+                  "Periodo de edad del difunto", 
+                  "Sexo del difunto", 
+                  "Municipio de nacimiento", 
+                  "Escolaridad del difunto"),
+  
+  Tipo = c("String", "Numérico", "String", "String", "String", "Numérico",
+           "String", "String", "String", "Numérico", "Numérico", "Numérico",
+           "String", "String", "String", "String", "String", "String")
 )
-kable(variables_info, caption = "Descripción de las Variables", align = "c") %>%
-  kable_styling(full_width = FALSE)
+
+variables_info %>%
+  kable("html", caption = "Descripción de las Variables") %>%
+  kable_styling(full_width = F, position = "left", font_size = 12)
+
+```
+
+## Datos faltantes  
+Las únicas variables con valores NAN son Mnadif y Escodif lo cual tiene sentido, ya que al crear el nuevo dataset con todos los años sabíamos que estas dos variables aparecían en 13 de los 14 años, es decir que solo faltaban en uno y por eso se decidió agregarlas al análisis, además claro, de la valiosa información que pueden aportar.  
+```{r, echo=FALSE}
+faltantes <- colMeans(is.na(data)) * 100
+faltantes_df <- data.frame(Variable = names(faltantes), Porcentaje_NA = faltantes)
+
+faltantes_df %>% 
+  arrange(desc(Porcentaje_NA)) %>%
+  kable("html", caption = "Porcentaje de Valores Faltantes por Variable") %>%
+  kable_styling(full_width = F, position = "left", font_size = 12)
+
+
+```
+
+## Algunas distribuciones  
+### Distribucion de defunciones por sexo  
+Ahora bien, también hemos decidido analizar las distribuciones de algunas variables que podría valer la pena estudiar, por ejemplo, la distribución de muertes por género.  
+
+Vemos como está decentemente balanceado y esa diferencia en el porcentaje podría ser causada porque en general en la población hay más personas de genero masculino que femenino, pero no se puede confirmar hasta consultar otro dataset del cual no tenemos acceso actualmente.  
+```{r ditr_sex, echo=FALSE}
+data %>%
+  count(Sexo) %>%
+  mutate(
+    Sexo = case_when(
+      Sexo == 1 ~ "Masculino",
+      Sexo == 2 ~ "Femenino",
+      TRUE ~ as.character(Sexo)
+    ),
+    porcentaje = n / sum(n) * 100
+  ) %>%
+  ggplot(aes(x = Sexo, y = porcentaje, fill = Sexo)) +
+  geom_col() +
+  geom_text(aes(label = paste0(round(porcentaje, 2), "%")), vjust = -0.5) +
+  labs(title = "Distribución de Defunciones según Sexo",
+       x = "Sexo", y = "Porcentaje (%)") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+
+```
+### Distribucion por edad  
+Por otro lado, al observar la distribución de defunciones por edad observamos el histograma.  
+
+Se observa como la edad más común es de 1 año, seguida por la de 82 años. Las defunciones infantiles son digas de estudio, ya que se desconoce por qué el número es tan grande en comparación a cualquir otra edad. Por otro lado, 82 es un año que posiblemente se apega más a la esperanza de vida en Guatemala (habría que consultar fuentes para confirmar). De igual manera es interesante comp 12 es el valle de edad de defunciones y es donde menos muere gente.  
+```{r distr_age, echo=FALSE}
+data %>%
+  filter(Edadif <= 100) %>%
+  ggplot(aes(x = Edadif)) +
+  geom_histogram(binwidth = 1, fill = "forestgreen", color = "white") +
+  labs(title = "Distribución de Edad de los Difuntos (hasta 100 años)", 
+       x = "Edad", y = "Frecuencia") +
+  theme_minimal()
+
+
+```
+
+### Distribucion de defunciones por escolaridad.  
+Al observar la distribución según escolaridad se encuentran hallazgos interesantes.  
+
+Podemos observar como a medida que la educación aumenta de nivel, el número de defunciones disminuye, a priori puede pensarse que los universitarios mueren menos, pero en realidad esto puede deberse a que la cantidad de personas que reciben educación de nivel superior son muy pocas, por eso se crea el sesgo de creer que mueren menos.  
+```{r esco_dist}
+data %>%
+  count(Escodif, sort = TRUE) %>%
+  ggplot(aes(x = reorder(Escodif, n), y = n)) +
+  geom_col(fill = "orange") +
+  coord_flip() +
+  labs(title = "Defunciones según Escolaridad", x = "Escolaridad", y = "Número de casos") +
+  theme_minimal()
+
 ```
 
 ## Ejemplo de Identificadores Numéricos
