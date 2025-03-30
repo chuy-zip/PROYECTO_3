@@ -14,6 +14,10 @@ library(hopkins)
 library(factoextra) 
 library(cluster)
 library(tidytext)
+library(hash)
+library(readr)
+library(gridExtra)
+library(gt)
 ```
 
 ```{r, include=FALSE}
@@ -22,10 +26,45 @@ library(tidytext)
 #estos son los mismos datos, con la diferencia de que las variables categoricas ya aparecen con su respectivo nombre en lugar de ID's
 data <- read.csv("defunciones_filtradas_categorizadas.csv")
 ```
+## Procesamiento y análisis de datos para clustering
+
+Una de las primeras cosas que hicimos para poder hacer el agrupamiento de datos fue elegir cuidadoasamente las variables. Al igual que en ocasiones anteriores buscamos usar las variables numéricas para poder encontrar patrones en los datos. Pero incluso antes de elegir las variables numéricas, necesitamos ghacer algunas transofrmaciones que serán útiles en los resultados finales. Aquí hacemos un map (estructura llave valor), que es el código de causa de defunción con su respectiva descripción. Esto luego serapa útil al mostrar los resultados finales cuando se hayan asignado los grupos.
+
+```{r, porcesar_data}
+# Crear hash map
+diccionario_codigos_defuncion <- hash()
+
+# Leer datos y cargarlos
+diccionario_codigos_defuncion <- hash()
+
+# Leer datos con encoding correcto
+codigos_defuncion <- read.csv("codigo_defunciones.csv", 
+                            header = FALSE,
+                            fileEncoding = "ISO-8859-1",  # encoding
+                            stringsAsFactors = FALSE)
+
+# Verificar si funciona el diccionario
+head(codigos_defuncion)
+
+# Cargar datos en el hash
+for(i in 1:nrow(codigos_defuncion)) {
+  diccionario_codigos_defuncion[[codigos_defuncion$V1[i]]] <- codigos_defuncion$V2[i]
+}
+
+# Acceder a valores (ejemplo con tilde para corroborar el encoding funciona)
+descripcion <- diccionario_codigos_defuncion[["A00"]]
+print(descripcion)
+guess_encoding("codigo_defunciones.csv")$encoding[1]
+
+```
 
 ```{r testing}
 print(head(data,10))
 ```
+
+## limpieza de datos
+
+Ya que pleaneamos usar el algoritmo de K-means para poder realizar el agrupamiento, filtramos variables que podrían ser redundantes y también casos extremos/atípicos. Nuestro set de datos tiene algunas particularidades interesantes para los casos extremos. Por ejemplo en el caso de la edad del difunto *Edadif*, las personas a la cuales no se les registro la edad estan marcadas con el numero 999. Entonces hay que filtrar dichos casos que pueden afectar el agrupamient, además de remover variables redundantes como Añoreg y mesreg sy ya tenemos el año de defunción y el mes de ocurrencia.
 
 ```{r identificar_variables_num, echo=FALSE}
 
@@ -51,7 +90,27 @@ if(ncol(numeric_data) == 0) {
   cat("Variables numéricas encontradas:", ncol(numeric_data), "\n")
   cat("Nombres:", names(numeric_data), "\n")
 }
+
+# Convertir Caudef a texto si es factor
+data$Caudef <- as.character(data$Caudef)
+
+# Mapear codigos a descripciones
+data$Caudef_descripcion <- sapply(data$Caudef, function(codigo) {
+  descripcion <- diccionario_codigos_defuncion[[codigo]]
+  if (is.null(descripcion)) {  
+    return(codigo)             # mantener original si no se encuentr amatch del codigo
+  } else {
+    return(descripcion)
+  }
+}, USE.NAMES = FALSE)
+
+# Verificar resultados
+head(data[, c("Caudef", "Caudef_descripcion")], 10)
 ```
+
+## Estadísticas descriptivas de los datos
+
+Aquí nuevamente hacemos estadísticas descriptivas para ver el comportamiento de las variables y confirmar que no hay datos atípicos dentro de los datos con los que se realizará el clustering.
 
 ```{r estadisticas_descriptivas, echo=FALSE}
 
@@ -93,31 +152,12 @@ plot_histograms <- function(df) {
 
 plot_histograms(numeric_data)
 ```
+Aquí podemos ver que hemos logrado remover los casos atípicos/irreales como las edades de 999. En el caso de los meses realmente no se ve alguna tendencia en relación a los meses del año en relación a las defunciones. En el caso de los años se puede ver que con el tiempo han ingresado las defunciones, especialmente en los años de 2020 - 2022. Las defunciones parecen ser bastante mayores en personas alrededor de los 60-70 años y en niños también. Como último insight de este breve análisis se puede ver que el día en el cuál hay más defunciones significativamente es el día 14 del mes.
 
-```{r analisis_correlacion, echo=FALSE}
-if(ncol(numeric_data) > 1) {
-  # Matriz de correlación
-  cor_matrix <- round(cor(numeric_data, use = "complete.obs"), 2)
-  
-  # ver de correlación
-  corrplot::corrplot(cor_matrix, method = "color", type = "upper", 
-                     tl.col = "black", tl.srt = 45, 
-                     addCoef.col = "black", number.cex = 0.7)
-  
-  # Heatmap
-  ggplot(data = reshape2::melt(cor_matrix), 
-         aes(x = Var1, y = Var2, fill = value)) +
-    geom_tile() +
-    geom_text(aes(label = value), color = "black", size = 3) +
-    scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
-                        midpoint = 0, limit = c(-1,1)) +
-    theme_minimal() +
-    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
-    labs(title = "Matriz de correlación", x = "", y = "", fill = "Correlación")
-}
-```
 
 # Relaciones entre variables (clustering)
+
+Una vez procesados los datos se realiza el análisis de agrupamiento.
 
 ## Estadistico de Hopkins
 ```{r estadistico_hopkins, echo=FALSE}
@@ -131,8 +171,8 @@ variables_numericas <- na.omit(numeric_data)
 data <- data[complete.cases(data[, numeric_cols]), ]
 
 
-dim(variables_numericas)
-dim(data)
+#dim(variables_numericas)
+#dim(data)
 set.seed(123)
 
 muestra <- min(1000, nrow(variables_numericas))
@@ -149,8 +189,12 @@ hopkins_stat <- hopkins(datos_muestra)
 print(paste("Estadistico de Hopkins:", hopkins_stat))
 
 ```
+Con el estadístico de hopkins se obtuvo una valore de 0.794113672762698, el estadístico indica que los datos tienen una tendencia a poder ser agrupados, pero este número también nos indica que el agrupamiento de los datos puede que no sea tan fuerte al estar un poco alejado de un valor de 1. Tomando en cuenta las variables elegidas y que tenemos pocas variables numéricas, tiene sentido que el agrupamiento puede que no sea tan fuerte o distinguido. La situación de clustering no es ideal, pero es posible realizar agrupamiento aún con estas condiciones.
 
 ## Grafico de codo
+
+Para obtener el número de grupos para el algoritmo de K-means, realizamos el gráfico de codo, obteniendo los soguientes resultados:
+
 ```{r Grafico_codo, echo=FALSE}
 wss=0
 set.seed(123)
@@ -159,17 +203,23 @@ for (i in 1:10)
 
 plot(1:10, wss, type="b", xlab="Number of Clusters",  ylab="Within groups sum of squares")
 ```
+Claramente el códo de la gráfica se encuentra en 2 o bien 3 clusters. Luego de hacer distintas pruebas determinamos que la mejor opción sería una cantidad de 3 grupos para poder tener más insightts sobre las defunciones en Guatemala. Utilizando 3 grupos y el algoritmo de K-means se obtiene el siguiente diagrama de clusters.
 
 ```{r clustering_kmeans, echo=FALSE}
 k_optimo <- 3
 
 # Aplicar K-Means
 set.seed(123)
+
+#scaled data dio resultados peores
+#scaled_data = scale(variables_numericas)
 km <- kmeans(variables_numericas, centers = k_optimo, iter.max =100)
 
 # Visualizar los clusters con fviz_cluster
 fviz_cluster(km, data = variables_numericas, geom = "point", ellipse.type = "norm")
 ```
+
+Con estos resultados podemos ver que realmente el algoritmo ha tenido dificultades para encontrar grupos realmente separados entre sí. Por las elipses se puede notar que los grupos se intersecatn bastante entre si, pero esto era de esperarase tomando el cuenta el estadístico de hopkins. Pero a pesar de esto, se nota ver que si hay algunas regiones que están diferenciadas de los demás clusters, pero en general el agrupamiento con los datos seleccionados no es óptimo de momento. 
 
 ```{r clustering_eval_silueta, echo=FALSE}
 set.seed(123)
@@ -179,18 +229,22 @@ mean(silkm_muestra[, 3])
 fviz_silhouette(silkm_muestra) + coord_flip()  # grafico
 ```
 
+Además de la representación visual de los grupos realizamos el estadístico de silueta para determinar que tan bueno fue el agrupamiento. Debido a la cantidad de datos (más de 1 millon), tuvimos que tomar una muestra del set de datos para poder realizar el estadístico, ya que el propio algoritmo tiene un límite de espacio. Utilizando unamuestra al final se obtuvo un valor de silueta promedio de *"-0.004869132"*. Con el estadístico de silueta lo que se obtiene es un número en el intervalo de -1 a 1. Un valor cercano a 0, como el de este caso, quiere decir que realmente los grupos se traslapan y las variables de un grupo podrían pertenecer a otro. Tomando en cuenta el análisis que vimos al principio puede que las variables numéricas en este caso no hayan sido ideales, pero aún con estos resultados neutros, se ha podido realziar un agrupamiento que se analizará a continuación.
+
+El agrupamiento fue realizado con 4 variables al final: el año, mes , dia de ocurrencia y la edad. Realmente estas primeras 3 no ayudaron mucho en el agrupamiento de los datos, algo que era de esperarse tomando en cuenta la distribución de los datos que se vió al principio. Seguramente fue por lo poca tendencia de agrupamiento de estas variables que el agrupamiento no fue tan efectivo. No obstante y como se muestra a continuación, los datos si pudieron agruparse por la edad de las personas.
+
 ```{r analisis_cluster_en_data, echo=FALSE}
 data$Cluster <- as.factor(km$cluster)
 # Ver las primeras filas de la tabla con la nueva columna de clusters
 head(data)
 ```
 
-# Graficos relevantes por grupo
-```{r prueba}
-n_distinct(data$Escodif)
+```{r prueba, echo=FALSE}
+#n_distinct(data$Escodif)
 ```
+# Graficos relevantes por grupo
 
-```{r graficos_grupales_clustering, echo=FALSE}
+```{r grafic_cluster 2, echo=FALSE}
 # Gráfico de densidad de edad por cluster
 ggplot(data, aes(x = Edadif, fill = Cluster)) +
   geom_density(alpha = 0.6) +
@@ -203,55 +257,74 @@ ggplot(data, aes(x = Edadif, fill = Cluster)) +
   theme(legend.position = "none") +
   coord_cartesian(xlim = c(0, 120))  # Ajusta estos valores según tus datos
 
-# Top 5 causas de defunción por cluster
-data %>%
+```
+Aquí se puede ver que los clusters generados por el algorítmo de knn, separó los datos por distintos rangos de edad. Lo cuál es particularmente útil en nuestro caso, ya que queremos conocer patrones dentro de las defunciones en Guatemala y agrupar por distintos rangos de edad nos ayuda a hacer un análsis más detallado, explorando la relación entre las variables categóricas con los distintos rangos de edad. Los rangos se dividen principalmente en 3. Podríamos llamarlos jovenes (cluster 1), adultos (cluster 3) y adultos mayores (cluster 2) con rangos de edad aproximados de 0-30, 30-60 y 60+ respectivamente. En base a estos grupos de edad se analizaron las defunciones con respecto a la edad. 
+
+```{r grafic_cluster 3, echo=FALSE}
+top_causas <- data %>%
+  group_by(Cluster, year, Caudef) %>%
+  summarise(n = n(), .groups = 'drop') %>%
+  group_by(Cluster, year) %>%
+  slice_max(n, n = 1) %>%  # agarrarmos la cuasa mas frecuente para cada anio
+  ungroup()
+
+top_causas_por_cluster <- data %>%
   group_by(Cluster, Caudef) %>%
-  summarise(n = n()) %>%
-  arrange(Cluster, desc(n)) %>%
+  summarise(n = n(), .groups = 'drop') %>%
   group_by(Cluster) %>%
-  slice_max(n, n = 10) %>%
-  ggplot(aes(x = reorder_within(Caudef, n, Cluster), y = n, fill = Cluster)) +
+  slice_max(n, n = 10)  # Top 10 por cluster
+
+# Gráfico con códigos
+ggplot(top_causas_por_cluster, 
+       aes(x = reorder_within(Caudef, n, Cluster), y = n, fill = Cluster)) +
   geom_col() +
   scale_x_reordered() +
   scale_fill_brewer(palette = "Set1") +
   coord_flip() +
-  labs(title = "Top 10 Causas de Defunción por Cluster",
-       x = "",
-       y = "Frecuencia") +
+  labs(
+    title = "Top 10 Códigos de Defunción por Cluster",
+    x = "",
+    y = "Frecuencia"
+  ) +
   theme_minimal() +
   facet_wrap(~Cluster, scales = "free_y") +
   theme(legend.position = "none")
 
-# depocu con codigos numericos
-data %>%
-  group_by(Cluster, Depocu) %>%
-  summarise(n = n(), .groups = 'drop') %>%
-  group_by(Cluster) %>%
-  arrange(desc(n)) %>%
-  slice_head(n = 10) %>%
-  ggplot(aes(x = reorder(as.factor(Depocu), n), y = n, fill = Cluster)) +
-  geom_col() +
-  scale_fill_brewer(palette = "Set1") +
-  coord_flip() +
-  labs(title = "Top 10 Departamentos de Ocurrencia por Cluster",
-       x = "Departamento",
-       y = "Frecuencia") +
-  theme_minimal() +
-  facet_wrap(~Cluster, scales = "free_y") +
-  theme(legend.position = "none")
+tabla_referencia <- top_causas_por_cluster %>%
+  distinct(Caudef) %>%  # Eliminar duplicados
+  left_join(
+    codigos_defuncion %>% rename(Caudef = V1, Descripción = V2),
+    by = "Caudef"
+  ) %>%
+  arrange(Caudef) %>%  # Orden alfabético
+  gt() %>%
+  tab_header(
+    title = "Descripción de Códigos de Defunción",
+    subtitle = "Referencia para el gráfico 'Top 10 por Cluster'"
+  ) %>%
+  cols_label(
+    Caudef = "Código",
+    Descripción = "Descripción Completa"
+  ) %>%
+  tab_style(
+    style = cell_text(weight = "bold", color = "dodgerblue"),
+    locations = cells_column_labels()
+  ) %>%
+  fmt_missing(columns = everything(), missing_text = "Código no encontrado")
 
-data %>%
-  ggplot(aes(x = as.factor(Sexo), fill = Cluster)) +
-  geom_bar(position = "dodge") +
-  scale_fill_brewer(palette = "Set1") +
-  labs(title = "Distribución por Sexo y Cluster",
-       x = "Sexo",
-       y = "Conteo") +
-  theme_minimal() +
-  facet_wrap(~Cluster) +
-  geom_text(stat = 'count', aes(label = ..count..), 
-            position = position_dodge(width = 1), vjust = -0.5)
+tabla_referencia
 
+```
+
+Lo primero es analizar las principales razones de defunción por cluster (edad), recordemos que el cluster 1 son las personas jovenes, 3 las personas adultas y el 2 personas mayores. En este caso se mantiene el código en el gráfico de barras por fines de presentación, ya que las descripciones de algunos son demasiado largas. Pero por cada cluster se incluye también una tabla para los códigos correspondientes. Ahora ya entrando en el análisis, en el caso de las personas jovenes las enfermedades más comunes parecen ser la Neumonía (J189), "Exposición a factores no especificados que causan otras lesiones" (X599), Agresión con disparos de armas de fuego (X954, X959) y lesiones en accidentes vehiculares (V899).
+
+En el caso del grupo 3, las razones más comunes son Infartos (I219), Cirrosis de hígado (K746), Diabetes mellitus (E149), "Exposición a factores no especificados", muerte sin asistencia (R98X) y Covid-19 (U071). Finalmente el grupo con las personas mayores (grupo 2), las principales razones son: infartos, neumonía, senilidad (R54X), Diabetes mellitus, muerte sin asistencia y Accidente vascular encefálico agudo (I64X).
+
+Podemos ver que realmente las causas de defuncion varian dependiendo de la edad del individuo. A medida que cambia el rango de edad hay mayores defunciones por enfermedades como diabetes o infartos, mientras que en personas jovenes las razones tienden a ser más relacionadas a accidentes o eventos relacionados con armas de fuego, a excepción de la Neumonía, que es la causa de muerte más común, esta enfermedad puede llegar a ser común y en lugares con poca asistencia médica puede ser letal. Otra cosa que es un tanto preocupante es que en varios de los casos no se identifica correctamente el motivo de defunción y aún más preocupante el hecho que para 2 de los 3 grupos muchas personas tuvieron asistencia. Sabiendo esto podemos profundizar en el tipo de asistencia que recibieron los difuntos con el siguiente gráfico:
+
+
+```{r grafic_cluster 6, echo=FALSE}
+# tipos de asistencia por defuncion
 data %>%
   group_by(Cluster, Asist) %>%
   summarise(n = n(), .groups = 'drop') %>%
@@ -269,39 +342,12 @@ data %>%
   facet_wrap(~Cluster, scales = "free_y") +
   theme(legend.position = "none")
 
-#defunciones por año por cluster (esta se debe hacer con la columna Mesocu)
-# Convertir Mesocu a nombre de mes (opcional)
-data <- data %>%
-  mutate(Mes_nombre = factor(month.abb[Mesocu], levels = month.abb))
+```
 
-# Gráfico de barras por mes
-data %>%
-  ggplot(aes(x = Mes_nombre, fill = Cluster)) +
-  geom_bar(position = "dodge") +
-  scale_fill_brewer(palette = "Set1") +
-  labs(
-    title = "Defunciones por Mes y Cluster",
-    x = "Mes",
-    y = "Número de defunciones"
-  ) +
-  theme_minimal() +
-  facet_wrap(~Cluster, scales = "free_y") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+Como se puede ver en el gráfico, si hay intervención considerable del equipo médico, pero muchas personas independientemente de la edad no recibieron asistencia y la intervención de equipo paramédico parece ser muy poca. Se ve claramente que hay un gran problema con la asistencia a personas en riesgo por enfermedad o accidentes. Y encima de esto, se puede ver que hay falta de intervención medica si analizamos el lugar de ocurrencia por cada uno de los grupos.
 
-#defunciones por mes por cluster (esta se debe hacer con la columna year)
-data %>%
-  ggplot(aes(x = as.factor(year), fill = Cluster)) +
-  geom_bar(position = "dodge") +
-  scale_fill_brewer(palette = "Set1") +
-  labs(
-    title = "Defunciones por Año y Cluster",
-    x = "Año",
-    y = "Número de defunciones"
-  ) +
-  theme_minimal() +
-  facet_wrap(~Cluster, scales = "free_y") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-
+```{r grafic_cluster 9, echo=FALSE}
+# lugares de ocurencia por cluster
 data %>%
   group_by(Cluster, Ocur) %>%
   summarise(n = n(), .groups = 'drop') %>%
@@ -322,7 +368,150 @@ data %>%
   facet_wrap(~Cluster, scales = "free_y") +
   theme(legend.position = "none")
 
-# Opción 1: Gráfico de barras clásico
+```
+
+Podemos ver que sin importar el rango de edad, el lugar de defunción más común es el domicilio de la persona, seguido por el hospital público pero hay una gran diferencia entre ambos, excepto en el caso de las personas más jóvenes (cluster 1). Las personas seguramente no atienden al hospital, pero con estos datos específicos es difícil conocer el porqué. Probablemente por falta de atención, dificultad de acceso, negligencia, entre otros. Lo que es interesante es que las personas menores de 30 años (aproximadamente) parecen ser más propensas en proporción a haber fallecido en hospitales. En un punto pensamos que tal vez la ubicación podría haber influido grandemente en las defunciones, habiendo menos asistencia médica en áreas rurales del país. En el sigiuetne gráfico se pone a prueba dicha suposición.
+
+
+```{r grafic_cluster 4, echo=FALSE}
+# departamento de ocurrencia
+data %>%
+  group_by(Cluster, Depocu) %>%
+  summarise(n = n(), .groups = 'drop') %>%
+  group_by(Cluster) %>%
+  arrange(desc(n)) %>%
+  slice_head(n = 10) %>%
+  ggplot(aes(x = reorder(as.factor(Depocu), n), y = n, fill = Cluster)) +
+  geom_col() +
+  scale_fill_brewer(palette = "Set1") +
+  coord_flip() +
+  labs(title = "Top 10 Departamentos de Ocurrencia por Cluster",
+       x = "Departamento",
+       y = "Frecuencia") +
+  theme_minimal() +
+  facet_wrap(~Cluster, scales = "free_y") +
+  theme(legend.position = "none")
+
+```
+
+Pero al final como se puede observar realmente el lugar con más defunciones es el área más urbanizada. Seguramente porque la densidad de población en la capital es mayor, hay muchas más personas en la capital Ciudad de Guatemala que en los demás departamentos. Realmente el lugar de defunción no parece tener relación alguna con la edad, el comportamiento parece ser el mismo con todos los grupos. Ahora que hemos analizado la atención y ubicación de las defunciones, podemos analizar si hay algún patrón en las fechas, tomando en cuenta el año o bien los meses.
+
+
+```{r grafic_cluster 8, echo=FALSE}
+#defunciones por año por cluster
+data %>%
+  ggplot(aes(x = as.factor(year), fill = Cluster)) +
+  geom_bar(position = "dodge") +
+  scale_fill_brewer(palette = "Set1") +
+  labs(
+    title = "Defunciones por Año y Cluster",
+    x = "Año",
+    y = "Número de defunciones"
+  ) +
+  theme_minimal() +
+  facet_wrap(~Cluster, scales = "free_y") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Parece que la mortalida fue disminuyendo en las personas menores de 30 años (cluster 1), menos personas jovenes estan falleciendo de forma prematura con el paso de los años recientemente. Pero para el resto de las edades mayores, la mortalidad a ido en aumento, habiendo un incremento enorme en los años 2020 y 2021. Esto se debe seguramente por las defunciones masivas que que lastimosamente se dieron a causa de la pandemia Covid-19. Durante ese periodo de tiempo muchas personas enfermaron y quienes fueron más afectados fueron las personas mayores. En esos 2 años, muchas personas fallecieron a causa del virus o bien por alguna enfermedad que se vió agravada por la presencia del virus en el cuerpo de las personas. El pico es definitivamente un resultado de la pandemia. Sabiendo esto, podemos confirmar y profundizar ahora en cuales fueron las principales causas por año.
+
+
+```{r defunciones_poranio_cluster}
+
+# Gráfico con códigos (en lugar de descripciones)
+grafico <- ggplot(top_causas, aes(x = as.factor(year), y = n, fill = Caudef)) +
+  geom_col() +
+  scale_fill_viridis_d(option = "D", name = "Código") +  # Paleta alternativa
+  labs(
+    title = "Causa más frecuente por Cluster y Año (códigos)",
+    x = "Año",
+    y = "Número de defunciones"
+  ) +
+  theme_minimal() +
+  facet_wrap(~Cluster, scales = "free_y") +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 8),
+    legend.position = "bottom",
+    legend.text = element_text(size = 6)
+  )
+
+print(grafico)
+
+tabla_referencia <- top_causas %>%
+  distinct(Caudef) %>%  # Elimina duplicados
+  left_join(
+    codigos_defuncion %>% rename(Caudef = V1, Descripción = V2),
+    by = "Caudef"
+  ) %>%
+  arrange(Caudef) %>%  # Ordenar alfabéticamente
+  gt() %>%
+  tab_header(
+    title = "Descripción de códigos de defunción",
+    subtitle = "Referencia única para el gráfico"
+  ) %>%
+  cols_label(
+    Caudef = "Código",
+    Descripción = "Descripción completa"
+  ) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_column_labels()
+  )
+
+tabla_referencia
+```
+
+En el caso de las personas más jovenes, la razón de defunción más comun había sido la Neumonía(J189) hasta el 2020, de este año en adelante predominan otras causas, pero que lastimosamente no están bien identificadas. Ambos códigos (X599 y R99X) hacen referencia a motivos de defunción no especificados. Por otra parte en el caso de las personas del grupo 3 (personas de edad intermedia) la principal razón de defunción alterna entre Infartos (I219) y Cirrosis (K746), a excepción delos años de pandemia donde la principal razón de defunción fue el Covid-19. En el caso de las personas de mayor edad (grupo 2) realmente la principal causa no ha cambiado, en todos los años el principal motivo fue infartos, incluidos los años de pandemia. Algo que refuerza la idea que el virus de pandemia fue letal no solo por el propio virus sino por el debilitamiento del cuerpo, exponiendolo a otras enfermedades y empeorando la salud en general.
+
+```{r grafic_cluster 7, echo=FALSE}
+
+#defunciones por mes por cluster
+# Convertir Mesocu a nombre de mes
+data <- data %>%
+  mutate(Mes_nombre = factor(month.abb[Mesocu], levels = month.abb))
+
+# Gráfico de barras por mes
+data %>%
+  ggplot(aes(x = Mes_nombre, fill = Cluster)) +
+  geom_bar(position = "dodge") +
+  scale_fill_brewer(palette = "Set1") +
+  labs(
+    title = "Defunciones por Mes y Cluster",
+    x = "Mes",
+    y = "Número de defunciones"
+  ) +
+  theme_minimal() +
+  facet_wrap(~Cluster, scales = "free_y") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+Ahora con respecto a las defunciones por mes, realmente parece que no hay relación alguna con la edad. En los 3 grupos el comportamient es el mismo. No obstante nos gustaría destacar que los meses en los cuales pareciera haber más defunciones, aunque la diferencia no sea tanta, es a mediados de año específicamente en  los meses de Julio y Agosto. Por el lado contrario febrero parece ser el mes donde ocurren menos defunciones. Ahora lo último que nos queda por analizar, es la información relacionada a la informacíon demográfica, para determinar si algún factor social puede estar influyendo en la cantidad de defunciones.
+
+## AHora con datos demográficos
+```{r grafic_cluster 5, echo=FALSE}
+
+# distribucion de genero por defuncion
+
+data %>%
+  ggplot(aes(x = as.factor(Sexo), fill = Cluster)) +
+  geom_bar(position = "dodge") +
+  scale_fill_brewer(palette = "Set1") +
+  labs(title = "Distribución por Sexo y Cluster",
+       x = "Sexo",
+       y = "Conteo") +
+  theme_minimal() +
+  facet_wrap(~Cluster) +
+  geom_text(stat = 'count', aes(label = ..count..), 
+            position = position_dodge(width = 1), vjust = -0.5)
+```
+
+En todos los casos, hay más defunciones de hombres que mujeres, independientemente del rango de edad. La única diferencia es que a medida que el grupo de edad es mayor la diferencia entre la cantidad de difuntos por sexo disminuye. Por ejemplo en el grupo 2 (las personas de mayor edad), la cantidad de difuntos casi no varía dependiendo del sexo. A diferencia de las personas menores a 60 años (grupos 1 y 3) done se ve claramente que los homrbres son más propensos a fallecer o al menos hay más defunciones en el sexo másculino. 
+
+
+```{r grafic_cluster 10, echo=FALSE}
+
+# estado civil por cluster
 data %>%
   ggplot(aes(x = as.factor(Ecidif), fill = Cluster)) +
   geom_bar(position = "dodge") +
@@ -336,15 +525,22 @@ data %>%
   facet_wrap(~Cluster, scales = "free_x") +  # Escalas libres en X para etiquetas largas
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
-# Ordenar niveles de escolaridad (ajusta según tus datos)
-# LA COLUMNA ESCODIF TIENEN ERROR, tiene valores con punto decimal, en lugar de solo enteros
+
+```
+
+En este caso no parece haber mucha correlación entre la cantidadd de defunciones con el tipo de estado civil. El punic que parece mostrar una diferencia significativa es el grupo 1, donde se ve que los difuntos son casi todos solteros, pero recordemos que este es el grupo con las personas más jovenes. Por lo que es de esperarse que la mayorái de las personas hayan fallecido estando solteros, ya que en este rango de edad se incluyen a personas menores de edad. En los otro grupos la diferencia no es tan grande.
+
+```{r graficos_grupales_clustering, echo=FALSE}
+
+
+# Ordenar niveles de escolaridad 
 niveles_escolaridad <- c("Ninguno", "Primaria", "Secundaria", "Básica", "Diversificado", "Universitario", "Post Grado", "Ignorado")
 
 
 data <- data %>%
   mutate(Escodif_ordenado = factor(Escodif, levels = niveles_escolaridad))
 
-# Gráfico de barras apiladas (proporción)
+# Gráfico de barras apiladas escolaridad
 data %>%
   ggplot(aes(x = Cluster, fill = Escodif_ordenado)) +
   geom_bar(position = "fill") +
@@ -360,23 +556,5 @@ data %>%
 
 ```
 
-```{r defunciones_poranio_cluster}
-top_causas <- data %>%
-  group_by(Cluster, year, Caudef) %>%
-  summarise(n = n(), .groups = 'drop') %>%
-  group_by(Cluster, year) %>%
-  slice_max(n, n = 1) %>%  # agarrarmos la cuasa mas frecuente para cada anio
-  ungroup()
+Por último tenemos el nivel de escolaridad de las personas, aquí encontramos un indicador interesante. De todas las personas, independientemente del rango de edad, el nivel de escolaridad es bastante bajo. Cuando en el grafico decimos que el nivel es "Ninguno" no se refiere a que no se conoce, el caso cuando no se conoce es NA o bien "Ignorado". En este gráfico podemos ver que en todos los grupos el nivel de educación es demasiado bajo. Ahora bien, podríamos decir que hay una correlación entre la escolaridad y las defunciones y decir que la mayoría de personas fallecidas son las que no alcanzan un nivel de educación alto. Pero con este gráfico es dificil determinarlo con certeza. Este gráfico no necesariamente podría representar una correlación entre defunciones y escolaridad, puede ser un indicador de que el nivel de la educación de las personas del país en general es bajo. A tal punto que sin importar la edad, las personas tienen menor escolaridad.
 
-ggplot(top_causas, aes(x = as.factor(year), y = n, fill = Caudef)) +
-  geom_col() +
-  scale_fill_brewer(palette = "Set2", name = "Causa de defunción") +
-  labs(
-    title = "Causa de defunción más frecuente por Cluster y Año",
-    x = "Año",
-    y = "Número de defunciones"
-  ) +
-  theme_minimal() +
-  facet_wrap(~Cluster, scales = "free_y") +  
-  theme(axis.text.x = element_text(angle = -90, hjust = 0, vjust = 0.3, size = 8))
-```
