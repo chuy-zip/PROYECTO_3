@@ -1,0 +1,261 @@
+---
+title: "Análisis de Defunciones"
+author: ""
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+```
+
+## Carga de Datos
+
+```{r}
+library(tidyverse)
+library(knitr)
+library(ggplot2)
+library(dplyr)
+
+# Cargar los datos
+df <- read.csv("defunciones_filtradas_categorizadas.csv")
+
+# Renombrar columnas para facilitar la visualización
+df <- df %>% rename(
+  Asistencia_recibida = Asist,
+  Año_registro = Añoreg,
+  Causa_defuncion = Caudef,
+  Departamento_ocurrencia = Depocu,
+  Departamento_registro = Depreg,
+  Día_ocurrencia = Diaocu,
+  Departamento_nacimiento = Dnadif,
+  Departamento_residencia = Dredif,
+  Estado_civil = Ecidif,
+  Edad_difunto = Edadif,
+  Escolaridad = Escodif,
+  Mes_ocurrencia = Mesocu,
+  Mes_registro = Mesreg,
+  Municipio_residencia = Mredif,
+  Sitio_ocurrencia = Ocur,
+  Periodo_edad_difunto = Perdif,
+  Sexo_difunto = Sexo,
+  Municipio_nacimiento = Mnadif,
+  Año_ocurrencia = year
+)
+```
+
+## Evolución de Defunciones por Año (Total)
+
+```{r}
+df %>% 
+  group_by(Año_ocurrencia) %>% 
+  summarise(Defunciones = n()) %>% 
+  ggplot(aes(x = Año_ocurrencia, y = Defunciones)) +
+  geom_line(color = "blue") +
+  geom_point(color = "red") +
+  theme_minimal() +
+  labs(title = "Evolución de Defunciones por Año", x = "Año", y = "Número de Defunciones")
+```
+
+## Evolución de Defunciones por Causa (Top 5)
+
+```{r}
+top_causas <- df %>% count(Causa_defuncion, sort = TRUE) %>% top_n(5, n)
+
+for (causa in top_causas$Causa_defuncion) {
+  plot <- df %>% 
+    filter(Causa_defuncion == causa) %>%
+    group_by(Año_ocurrencia) %>% 
+    summarise(Defunciones = n()) %>% 
+    ggplot(aes(x = Año_ocurrencia, y = Defunciones)) +
+    geom_line(color = "blue") +
+    geom_point(color = "red") +
+    theme_minimal() +
+    labs(title = paste("Evolución de Defunciones por", causa), x = "Año", y = "Número de Defunciones")
+  
+  print(plot)  
+}
+```
+
+## Evolución de Defunciones por Sexo
+
+```{r}
+df %>% 
+  group_by(Año_ocurrencia, Sexo_difunto) %>% 
+  summarise(Defunciones = n()) %>% 
+  ggplot(aes(x = Año_ocurrencia, y = Defunciones, color = Sexo_difunto)) +
+  geom_line() +
+  geom_point() +
+  theme_minimal() +
+  labs(title = "Evolución de Defunciones por Sexo", x = "Año", y = "Número de Defunciones", color = "Sexo")
+```
+
+## Evolución de Defunciones por Estado Civil
+
+```{r}
+df %>% 
+  group_by(Año_ocurrencia, Estado_civil) %>% 
+  summarise(Defunciones = n()) %>% 
+  ggplot(aes(x = Año_ocurrencia, y = Defunciones, color = Estado_civil)) +
+  geom_line() +
+  geom_point() +
+  theme_minimal() +
+  labs(title = "Evolución de Defunciones por Estado Civil", x = "Año", y = "Número de Defunciones", color = "Estado Civil")
+```
+
+## Evolución de Defunciones por Escolaridad
+
+```{r}
+df %>% 
+  group_by(Año_ocurrencia, Escolaridad) %>% 
+  summarise(Defunciones = n()) %>% 
+  ggplot(aes(x = Año_ocurrencia, y = Defunciones, color = Escolaridad)) +
+  geom_line() +
+  geom_point() +
+  theme_minimal() +
+  labs(title = "Evolución de Defunciones por Escolaridad", x = "Año", y = "Número de Defunciones", color = "Escolaridad")
+```
+
+
+``` {r esperanza_vida, echo=FALSE}
+# 1. Evolución de la edad máxima de defunción por año
+esperanza_vida <- df %>%
+  filter(Edad_difunto >= 0 & Edad_difunto <= 100) %>%  # Filtrar edades dentro de un rango realista
+  group_by(Año_ocurrencia) %>%
+  summarise(
+    Max_Edad = max(Edad_difunto, na.rm = TRUE),
+    Mediana_Edad = median(Edad_difunto, na.rm = TRUE),
+    Percentil_95 = quantile(Edad_difunto, 0.85, na.rm = TRUE)
+  )
+
+# Imprimir tabla numérica
+print(esperanza_vida)
+
+# Gráfico de la edad máxima
+ggplot(esperanza_vida, aes(x = Año_ocurrencia, y = Max_Edad)) +
+  geom_line(color = "blue") +
+  geom_point(color = "red") +
+  theme_minimal() +
+  labs(
+    title = "Evolución de la Edad Máxima de Defunción por Año",
+    x = "Año", y = "Edad Máxima de Defunción"
+  )
+
+# Gráfico de la mediana
+ggplot(esperanza_vida, aes(x = Año_ocurrencia, y = Mediana_Edad)) +
+  geom_line(color = "green") +
+  geom_point(color = "purple") +
+  theme_minimal() +
+  labs(
+    title = "Evolución de la Mediana de Edad de Defunción por Año",
+    x = "Año", y = "Mediana de Edad de Defunción"
+  )
+
+# Gráfico del percentil 85
+ggplot(esperanza_vida, aes(x = Año_ocurrencia, y = Percentil_95)) +
+  geom_line(color = "orange") +
+  geom_point(color = "brown") +
+  theme_minimal() +
+  labs(
+    title = "Evolución del Percentil 85 de Edad de Defunción por Año",
+    x = "Año", y = "Percentil 85 de Edad de Defunción"
+  )
+```
+# Análisis Profundo de Factores Subyacentes
+
+## 1. Tendencia Ascendente de Defunciones (2009-2022):
+
+* **Envejecimiento de la Población:**
+    * El aumento de la esperanza de vida, paradójicamente, puede llevar a un mayor número de defunciones, ya que una población envejecida es más susceptible a enfermedades crónicas y degenerativas.
+    * Es crucial analizar la estructura de edad de la población para determinar si el aumento de defunciones se correlaciona con un envejecimiento poblacional significativo.
+* **Cambios en los Estilos de Vida:**
+    * La creciente prevalencia de estilos de vida sedentarios, dietas poco saludables y el consumo de tabaco y alcohol pueden aumentar el riesgo de enfermedades crónicas como enfermedades cardíacas, diabetes y cáncer.
+    * Se debe investigar la disponibilidad de datos sobre hábitos de salud y factores de riesgo para evaluar su impacto en la mortalidad.
+* **Prevalencia de Enfermedades Crónicas:**
+    * El aumento de la incidencia de enfermedades crónicas como la diabetes, la hipertensión y el cáncer puede contribuir significativamente a la mortalidad.
+    * Es esencial analizar las tendencias de prevalencia de estas enfermedades y su relación con las causas de muerte registradas.
+* **Factores Socioeconómicos:**
+    * La pobreza, la falta de acceso a la atención médica y la baja educación pueden aumentar el riesgo de mortalidad.
+    * Se debe investigar la correlación entre la mortalidad y los indicadores socioeconómicos para identificar poblaciones vulnerables.
+* **Factores Ambientales:**
+    * La contaminación del aire, la exposición a sustancias tóxicas y el cambio climático pueden tener un impacto negativo en la salud y aumentar la mortalidad.
+    * Es necesario analizar los datos referentes a la exposición de la población a estos factores, y la relación que pueda tener con los índices de mortalidad.
+* **Acceso a la Atención Médica:**
+    * Las desigualdades en el acceso a la atención médica de calidad pueden contribuir a una mayor mortalidad en ciertos grupos de población.
+    * Se debe evaluar la disponibilidad y accesibilidad de los servicios de salud, especialmente para las poblaciones más vulnerables.
+
+## 2. Evolución de Defunciones por Causa (Top 5):
+
+* **I219 (Infarto Agudo del Miocardio):**
+    * Factores de riesgo: hipertensión, colesterol alto, tabaquismo, diabetes, obesidad.
+    * Estilos de vida: sedentarismo, mala alimentación, estrés.
+    * Acceso a atención médica oportuna.
+* **J189 (Neumonía no especificada):**
+    * Factores ambientales: Contaminación del aire, cambios bruscos de temperatura.
+    * Acceso a vacunación y tratamiento oportuno.
+    * Condiciones de vida: Hacinamiento, falta de higiene.
+* **E149 (Diabetes Mellitus):**
+    * Factores genéticos.
+    * Estilos de vida: mala alimentación, falta de ejercicio.
+    * Acceso a diagnóstico temprano y tratamiento adecuado.
+* **R98X (Muerte sin asistencia):**
+    * Factores socioeconómicos: pobreza, falta de acceso a servicios de salud.
+    * Factores culturales: rechazo a la atención médica.
+    * Factores geográficos: áreas remotas con difícil acceso a servicios de emergencia.
+* **X599 (Exposición a factores no especificados que causan otras lesiones y las no especificadas):**
+    * Factores ambientales: Contaminación, desastres naturales.
+    * Factores socioeconómicos: violencia, accidentes laborales.
+    * Factores de seguridad: falta de medidas de prevención de accidentes.
+    
+# Análisis de Factores Subyacentes en la Mortalidad en Guatemala
+
+## Evolución del Estilo de Vida, Dieta y Consumo de Sustancias:
+
+* **Cambios en la Dieta:**
+    * En Guatemala, como en muchos países en desarrollo, se observa una transición nutricional. Esto implica un aumento en el consumo de alimentos procesados, ricos en grasas saturadas, azúcares y sodio, y una disminución en el consumo de alimentos tradicionales como frutas, verduras y granos enteros.
+    * Esta transición se relaciona con un aumento en la prevalencia de enfermedades crónicas no transmisibles (ECNT), como enfermedades cardíacas, diabetes y ciertos tipos de cáncer.
+* **Sedentarismo:**
+    * La urbanización y los cambios en los patrones laborales han llevado a un aumento del sedentarismo en la población guatemalteca.
+    * La falta de actividad física regular aumenta el riesgo de obesidad, enfermedades cardíacas, diabetes y otras ECNT.
+* **Consumo de Alcohol y Tabaco:**
+    * El consumo de alcohol y tabaco sigue siendo un problema de salud pública en Guatemala.
+    * Ambas sustancias son factores de riesgo importantes para enfermedades cardíacas, cáncer y otras enfermedades crónicas.
+* **Hábitos de Salud y Factores de Riesgo:**
+    * La falta de acceso a información y educación sobre hábitos de salud saludables contribuye a la prevalencia de factores de riesgo como la hipertensión, el colesterol alto y la obesidad.
+    * Las barreras culturales y lingüísticas también pueden dificultar la adopción de hábitos de salud saludables en ciertas comunidades.
+
+## Aumento de Enfermedades Crónicas:
+
+* Las ECNT, incluyendo enfermedades cardíacas, diabetes y cáncer, están en aumento en Guatemala.
+* Este aumento se relaciona con los cambios en el estilo de vida, la dieta y el consumo de sustancias mencionados anteriormente.
+* La falta de acceso a la atención médica preventiva y el diagnóstico temprano también contribuyen a la carga de ECNT.
+
+## Factores Socioeconómicos y Mortalidad:
+
+* **Pobreza:**
+    * La pobreza limita el acceso a alimentos nutritivos, agua potable, vivienda adecuada y servicios de salud, lo que aumenta el riesgo de enfermedades y muerte prematura.
+    * Las personas que viven en la pobreza tienen más probabilidades de estar expuestas a factores de riesgo ambientales y laborales.
+* **Falta de Acceso a la Atención Médica:**
+    * Las desigualdades en el acceso a la atención médica de calidad son un problema importante en Guatemala.
+    * Las poblaciones rurales e indígenas a menudo tienen dificultades para acceder a los servicios de salud debido a la distancia, el costo y las barreras culturales y lingüísticas.
+* **Baja Educación:**
+    * La baja educación se relaciona con una menor conciencia sobre los hábitos de salud saludables y un menor acceso a oportunidades económicas.
+    * Las personas con baja educación tienen más probabilidades de tener trabajos de alto riesgo y de vivir en condiciones de pobreza.
+
+## Población Más Vulnerable:
+
+* Con base en la información anterior y los hallazgos, la población más vulnerable en Guatemala incluye:
+    * Poblaciones rurales e indígenas: Estas poblaciones enfrentan múltiples barreras, incluyendo la pobreza, la falta de acceso a la atención médica y la baja educación.
+    * Personas de bajos ingresos: La pobreza limita el acceso a alimentos nutritivos, vivienda adecuada y servicios de salud.
+    * Personas con baja educación: La baja educación se relaciona con una menor conciencia sobre los hábitos de salud saludables y un menor acceso a oportunidades económicas.
+
+## Época del Año con Mayor Mortalidad:
+
+* Los resultados indican un aumento en la mortalidad en junio y julio, con un pico alrededor del día 16.
+* Para respaldar estos datos, es importante considerar:
+    * **Factores estacionales:** En Guatemala, la temporada de lluvias suele comenzar en mayo o junio, lo que puede aumentar el riesgo de enfermedades transmitidas por el agua y enfermedades respiratorias.
+    * Además, las condiciones de vida de las personas que viven en pobreza, se pueden ver seriamente afectadas por las condiciones climaticas, ya que las lluvias pueden provocar inundaciones, y perdidas materiales, que afectan la salud mental de estas personas.
+    * Las enfermedades respiratorias, pueden aumentar en esta temporada del año, y aunado a esto, la falta de acceso a servicios de salud, empeoran el pronostico de la enfermedad.
+    * **Condiciones socioeconómicas:** Las condiciones socioeconómicas precarias pueden exacerbar los efectos de los factores estacionales en la salud.
+    
+---
