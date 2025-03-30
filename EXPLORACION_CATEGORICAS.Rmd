@@ -1,117 +1,148 @@
 ---
-title: "EXPLORACION_CATEGORICAS"
+title: "Análisis de Variables Categóricas"
 output: html_document
+date: "2025-03-25"
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-library(knitr)
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
 library(dplyr)
-library(kableExtra)
-library(tidyr)
 library(ggplot2)
+library(knitr)
+library(kableExtra)
+library(scales)  # Para formatear números
+```  
+## Carga de los datos...
+```{r}
+data <- read.csv("defunciones_filtradas_categorizadas.csv")
 ```
 
-```{r, include=FALSE}
-data <- read.csv("defunciones2022.csv")
+``` {r}
+#Diccionario de variables categoricas
+
+variable_labels <- list(
+  "Asist" = "Asistencia_recibida",
+  "Caudef" = "Causa_de_defunción",
+  "Depocu" = "Departamento_ocurrencia",
+  "Depreg" = "Departamento_registro",
+  "Dnadif" = "Departamento_nacimiento",
+  "Dredif" = "Departamento_residencia",
+  "Ecidif" = "Estado_civil",
+  "Escodif" = "Escolaridad",
+  "Mredif" = "Municipio_residencia",
+  "Ocur" = "Sitio_ocurrencia",
+  "Perdif" = "Periodo_edad_difunto",
+  "Sexo" = "Sexo_difunto",
+  "Mnadif" = "Municipio_nacimiento"
+)
+
 ```
 
-```{r identificar_variables_cat, echo=FALSE}
-categorical_data <-  data %>%
-  select(-"Mesreg","Añoreg", "Diaocu", "Edadif")
-#categorical_cols <- sapply(data, function(x) !is.numeric(x))
-#categorical_data <- data[, categorical_cols, drop = FALSE]
+## Tablas de frecuencias y proporciones
+```{r}
+categorical_vars <- names(variable_labels)
 
-# Verificar si hay columnas categóricas
-#if(ncol(categorical_data) == 0) {
-#  stop("No se encontraron variables categóricas en el dataset")
-#} else {
-#  cat("Variables categóricas encontradas:", ncol(categorical_data), "\n")
-#  cat("Nombres:", names(categorical_data), "\n")
-#}
+# Crear tablas de frecuencia y proporciones
+freq_tables <- lapply(categorical_vars, function(var) {
+  freq_table <- as.data.frame(table(data[[var]]))
+  colnames(freq_table) <- c("Categoria", "Frecuencia")
+  freq_table$Proporcion <- round(freq_table$Frecuencia / sum(freq_table$Frecuencia), 4)
+  freq_table <- freq_table[order(-freq_table$Frecuencia), ]  # Orden descendente
+  return(freq_table)
+})
 
-```
-
-```{r generar_tablas_frecuencia, echo=FALSE}
-generate_frequency_tables <- function(df) {
-  freq_tables <- list()
-  
-  # generar
-  for(col_name in names(df)) {
-    
-    freq <- df %>%
-      count(!!sym(col_name)) %>%
-      mutate(
-        Porcentaje = round(n / sum(n) * 100, 2),
-        Porcentaje_Acumulado = cumsum(Porcentaje)
-      ) %>%
-      rename(
-        Categoría = !!sym(col_name),
-        Frecuencia = n
-      ) %>%
-      arrange(desc(Frecuencia))
-    
-    # Almacenar en la lista
-    freq_tables[[col_name]] <- freq
-  }
-  
-  return(freq_tables)
+# Mostrar las tablas en un formato más visual
+for (i in seq_along(categorical_vars)) {
+  cat("\n###", variable_labels[[categorical_vars[i]]], "\n")
+  print(kable(freq_tables[[i]][1:10, ], caption = paste("Top 10 categorías de", variable_labels[[categorical_vars[i]]]), align = "c") %>%
+          kable_styling(full_width = FALSE))
 }
 
-# generar las tablas
-freq_tables <- generate_frequency_tables(categorical_data)
-
 ```
 
-```{r visualizar_datos, echo=FALSE}
-display_frequency_plots <- function(freq_tables, top_n = 15, ancho = 0.7) {
-  # Recorrer cada tabla de frecuencias
-  for(col_name in names(freq_tables)) {
-    # Obtener los datos y ordenarlos
-    plot_data <- freq_tables[[col_name]] %>%
-      arrange(desc(Frecuencia)) %>%
-      head(top_n)  # Limitar a las top_n categorías
-    
-    # Crear el gráfico
-    p <- ggplot(plot_data, aes(x = reorder(Categoría, Frecuencia), 
-                             y = Frecuencia, 
-                             fill = Frecuencia)) +
-      geom_bar(stat = "identity", width = ancho) +
-      scale_fill_gradient(low = "#3498db", high = "#2c3e50") +
-      coord_flip() +  # Barras horizontales para mejor lectura
-      labs(title = paste("Distribución de:", col_name),
-           x = "Categoría",
-           y = "Frecuencia") +
-      theme_minimal() +
-      theme(
-        plot.title = element_text(hjust = 0.5, face = "bold"),
-        axis.text.y = element_text(size = 10),
-        legend.position = "none"
-      ) +
-      geom_text(aes(label = Frecuencia), 
-                hjust = -0.2, 
-                size = 3.5, 
-                color = "black")
-    
-    # Mostrar porcentaje si hay espacio
-    if(top_n <= 10) {
-      p <- p + geom_text(aes(label = paste0(Porcentaje, "%")), 
-                        hjust = 1.1, 
-                        size = 3, 
-                        color = "white")
-    }
-    
-    # Imprimir el gráfico
-    print(p)
-    cat("\n")  # Espacio entre gráficos
-  }
+## Graficos de barras
+```{r}
+for (var in categorical_vars) {
+  cat("\n###", variable_labels[[var]], "\n")
+  
+  top_10 <- data %>%
+    count(!!sym(var), sort = TRUE) %>%
+    top_n(10, n)
+  
+  print(
+    ggplot(top_10, aes(x = reorder(!!sym(var), -n), y = n, fill = !!sym(var))) +
+      geom_bar(stat = "identity", show.legend = FALSE) +
+      coord_flip() +
+      scale_y_continuous(labels = comma) +  
+      # Formatea números sin notación científica
+      labs(title = paste("Top 10 categorías de", variable_labels[[var]]), x = variable_labels[[var]], y = "Frecuencia") +
+      theme_minimal()
+  )
 }
-
-# Uso:
-display_frequency_plots(freq_tables, top_n = 10)
 ```
 
-# NOTA Aqui lo hacemos de forma automatica para poder poder ver todas las distintas graficas y ver cuales son las mas relevantes e interesantes. Los datos se muestran con numeros pero es porque el data set tiene ID's para las columnas categóricas. 
+# Análisis de Defunciones en Guatemala (2009-2023)
 
+## Resultados Clave
 
+A continuación, se presentan los resultados más relevantes del análisis de la base de datos de defunciones del INE:
+
+1.  **Asistencia médica:**
+    * La mayoría de las defunciones ocurrieron con asistencia médica (47.06%).
+    * Un porcentaje significativo ocurrió sin asistencia médica (45.31%).
+    * La asistencia empírica representa un porcentaje menor (7.63%).
+
+2.  **Causas de defunción:**
+    * Las principales causas de defunción fueron:
+        * Infarto agudo de miocardio (14.57%).
+        * Neumonía no especificada (5.56%).
+        * Diabetes mellitus (4.58%).
+
+3.  **Departamentos:**
+    * Los departamentos con mayor número de defunciones fueron:
+        * Guatemala (37.66%).
+        * Quetzaltenango (8.39%).
+        * Alta Verapaz (7.35%).
+    * Estos mismos departamentos también presentan los mayores números en cuanto a registro de defunciones.
+    * En cuanto a nacimiento, los departamentos con más registros son:
+        * Guatemala (36.88%).
+        * San Marcos (8.7%).
+        * Alta Verapaz (7.4%).
+    * En cuanto a residencia, los departamentos con más registros son:
+        * Guatemala (38.8%).
+        * Desconocido (8.59%).
+        * San Marcos (8.28%).
+
+4.  **Estado civil:**
+    * El estado civil más frecuente fue soltero (42.92%).
+    * Seguido de casado (28.11%).
+    * Y luego unidos (13.78%).
+
+5.  **Escolaridad:**
+    * La mayoría de los difuntos no tenían escolaridad (41.45%).
+    * Un porcentaje significativo tenía primaria (29.56%).
+    * Y un 12.2% lo marca como ignorado.
+
+6.  **Municipio de residencia:**
+    * El municipio de residencia más frecuente fue Guatemala (16.51%).
+    * Seguido de desconocido (8.59%).
+    * Y luego Mixco (4.55%).
+
+7.  **Sitio de ocurrencia:**
+    * La mayoría de las defunciones ocurrieron en el domicilio (57.69%).
+    * Un porcentaje significativo ocurrió en hospitales públicos (17.3%).
+    * Y luego en el IGSS (6.85%).
+
+8.  **Periodo de edad:**
+    * La mayoría de los difuntos tenían 1 año o más (88.35%).
+    * Un porcentaje significativo tenía de 1 a 11 meses (7.58%).
+    * Y un 4.07% tenía menos de 1 mes.
+
+9.  **Sexo:**
+    * El 59.54% de los difuntos eran hombres.
+    * El 40.46% de los difuntos eran mujeres.
+
+## Interpretación
+
+Estos resultados sugieren la necesidad de mejorar el acceso a servicios de salud, especialmente en áreas rurales y para poblaciones vulnerables. También resaltan la importancia de políticas de salud pública enfocadas en la prevención y tratamiento de enfermedades cardiovasculares, respiratorias y metabólicas. La alta mortalidad infantil y la falta de escolaridad son otros aspectos preocupantes que requieren atención.
 
