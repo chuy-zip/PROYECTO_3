@@ -246,16 +246,35 @@ head(data)
 
 ```{r grafic_cluster 2, echo=FALSE}
 # Gráfico de densidad de edad por cluster
-ggplot(data, aes(x = Edadif, fill = Cluster)) +
+summary_edad <- data %>%
+  group_by(Cluster) %>%
+  summarise(
+    min_edad = min(Edadif, na.rm = TRUE),
+    max_edad = max(Edadif, na.rm = TRUE),
+    label = paste("Edad:", min_edad, "-", max_edad)
+  )
+
+# Graf 2.0 :p
+ggplot(data, aes(x = Edadif, fill = factor(Cluster))) +
   geom_density(alpha = 0.6) +
+  geom_vline(data = summary_edad, 
+             aes(xintercept = min_edad), 
+             linetype = "dashed", color = "darkred") +
+  geom_vline(data = summary_edad, 
+             aes(xintercept = max_edad), 
+             linetype = "dashed", color = "darkblue") +
+  geom_text(data = summary_edad, 
+            aes(x = mean(c(min_edad, max_edad)), y = Inf, 
+                label = label),
+            vjust = 1.5, size = 3, color = "black") +
   scale_fill_brewer(palette = "Set1") +
-  labs(title = "Distribución de Edad por Cluster",
+  labs(title = "Distribución de Edad por Cluster con Rango",
        x = "Edad del difunto",
-       y = "Densidad") +
+       y = "Densidad",
+       fill = "Cluster") +
   theme_minimal() +
-  facet_wrap(~Cluster, ncol = 1) +
-  theme(legend.position = "none") +
-  coord_cartesian(xlim = c(0, 120))  # Ajusta estos valores según tus datos
+  facet_wrap(~Cluster, ncol = 1, scales = "free_y") +
+  coord_cartesian(xlim = c(0, 120))
 
 ```
 Aquí se puede ver que los clusters generados por el algorítmo de knn, separó los datos por distintos rangos de edad. Lo cuál es particularmente útil en nuestro caso, ya que queremos conocer patrones dentro de las defunciones en Guatemala y agrupar por distintos rangos de edad nos ayuda a hacer un análsis más detallado, explorando la relación entre las variables categóricas con los distintos rangos de edad. Los rangos se dividen principalmente en 3. Podríamos llamarlos jovenes (cluster 1), adultos (cluster 3) y adultos mayores (cluster 2) con rangos de edad aproximados de 0-30, 30-60 y 60+ respectivamente. En base a estos grupos de edad se analizaron las defunciones con respecto a la edad. 
