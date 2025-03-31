@@ -136,14 +136,36 @@ data %>%
 
 ```
 
-## Ejemplo de Identificadores Numéricos
-Para entender cómo funcionan los identificadores numéricos en el conjunto de datos, a continuación se muestra un ejemplo de los códigos numéricos de departamentos y su significado:
+## Algunos hallazgos
+```{r, relation_state_age}
 
-```{r, echo=FALSE}
-ejemplo_paises <- data.frame(
-  Codigo_Pais = c(1, 2, 3, 4, 5),
-  Nombre_Pais = c("Guatemala", "El Progreso", "Sacatepequez", "Chimaltengango", "Escuintla")
-)
-kable(ejemplo_paises, caption = "Ejemplo de Identificadores Numéricos para Países", align = "c") %>%
-  kable_styling(full_width = FALSE)
+
+data %>%
+  filter(Edadif <= 100) %>%
+  group_by(Ecidif) %>%
+  summarise(edad_promedio = mean(Edadif, na.rm = TRUE), total_defunciones = n()) %>%
+  arrange(desc(edad_promedio)) %>%
+  ggplot(aes(x = reorder(Ecidif, edad_promedio), y = edad_promedio, fill = Ecidif)) +
+  geom_col() +
+  coord_flip() +
+  labs(title = "Edad promedio de defunción según Estado Civil",
+       x = "Estado Civil", y = "Edad promedio") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
 ```
+
+```{r, relation_escoparents_kids}
+data %>%
+  filter(Edadif < 5) %>%
+  count(Escodif) %>%
+  ggplot(aes(x = reorder(Escodif, n), y = n, fill = Escodif)) +
+  geom_col() +
+  coord_flip() +
+  labs(title = "Mortalidad Infantil según Escolaridad del difunto",
+       x = "Nivel de Escolaridad", y = "Número de Defunciones") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+```
+
