@@ -1,0 +1,115 @@
+---
+title: "dependent_variable"
+author: "Irving, Chuy, Oscar"
+date: "2025-04-02"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(knitr)
+library(kableExtra)
+library(ggplot2)
+```
+
+## Carga de Datos
+```{r, include=FALSE}
+data <- read.csv("defunciones_filtradas.csv")
+```
+
+```{r nan_values, echo=FALSE}
+data %>%
+  summarise(
+    total = n(),
+    faltantes = sum(is.na(Caudef) | Caudef == ""),
+    porcentaje_faltante = round(100 * sum(is.na(Caudef) | Caudef == "") / n(), 2)
+  ) %>%
+  knitr::kable(caption = "Resumen de valores faltantes o vacíos en la variable 'Caudef'")
+
+# Filtrar registros válidos
+data <- data %>%
+  filter(!is.na(Caudef) & Caudef != "")
+```
+
+```{r agrupation, echo=FALSE}
+# Cambiar umbral a 0.5% para reducir el impacto de la categoría "Otras"
+causas_frecuentes <- data %>%
+  count(Caudef) %>%
+  mutate(pct = n / sum(n)) %>%
+  filter(pct >= 0.005) %>%  # Umbral menor
+  pull(Caudef)
+
+# Reasignar "Otras"
+data <- data %>%
+  mutate(Caudef = if_else(Caudef %in% causas_frecuentes, Caudef, "Otras"))
+
+# Verificar nueva distribución
+data %>%
+  count(Caudef, sort = TRUE) %>%
+  mutate(pct = round(100 * n / sum(n), 2)) %>%
+  knitr::kable(caption = "Distribución de la variable 'Caudef' luego de agrupar causas poco frecuentes")
+```
+```{r top10, echo=FALSE}
+
+data %>%
+  count(Caudef, sort = TRUE) %>%
+  slice_max(n, n = 10) %>%
+  mutate(pct = round(100 * n / sum(n), 2)) %>%
+  rename(`Causa de Defunción` = Caudef,
+         `Número de Defunciones` = n,
+         `Porcentaje (%)` = pct) %>%
+  kable(caption = "Top 10 causas de defunción más frecuentes en el conjunto de datos")
+
+```
+
+```{r new_dataset, echo=FALSE}
+# Crear vector con las 10 causas más frecuentes
+top_10_causas <- c("I219", "J189", "E149", "R98X", "X599", 
+                   "K746", "R99X", "R54X", "X959", "I64X")
+
+# Filtrar el dataset
+data <- data %>%
+  filter(Caudef %in% top_10_causas)
+
+# Confirmar número de observaciones filtradas
+data %>%
+  count(Caudef, sort = TRUE) %>%
+  mutate(pct = round(100 * n / sum(n), 2)) %>%
+  kable(caption = "Distribución luego de filtrar por las 10 causas principales")
+
+
+```
+
+```{r drownsampling, echo=FALSE}
+# Establecer el tamaño base igual al mínimo
+min_n <- data %>%
+  count(Caudef) %>%
+  pull(n) %>%
+  min()
+
+# Aplicar submuestreo para que todas las clases tengan igual número de registros
+set.seed(123)  # para reproducibilidad
+data_balanceada <- data %>%
+  group_by(Caudef) %>%
+  slice_sample(n = min_n) %>%
+  ungroup()
+
+# Verificar distribución final
+data_balanceada %>%
+  count(Caudef) %>%
+  mutate(pct = round(100 * n / sum(n), 2)) %>%
+  kable(caption = "Distribución balanceada de causas (downsampling aplicado)")
+
+```
+
+```{r to_factor, echo=FALSE}
+# Convertir la variable Caudef a factor
+data_balanceada$Caudef <- as.factor(data_balanceada$Caudef)
+
+# Verificar estructura
+str(data_balanceada$Caudef)
+
+# Visualizar niveles
+levels(data_balanceada$Caudef)
+
+```
