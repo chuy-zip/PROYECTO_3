@@ -113,3 +113,61 @@ str(data_balanceada$Caudef)
 levels(data_balanceada$Caudef)
 
 ```
+```{r custom_5_auto_letter, echo=FALSE}
+library(dplyr)
+library(knitr)
+
+# 1) Extraer la primera letra del código
+data <- data %>%
+  mutate(letra_inicial = substr(Caudef, 1, 1))
+
+# 2) Asignar 4 macro-categorías; las demás se marcan como "Candidata"
+data <- data %>%
+  mutate(
+    causa_macro = case_when(
+      letra_inicial %in% c("I","J","E","K") ~ "Crónicas",
+      letra_inicial %in% c("A","B")         ~ "Infecciosas",
+      letra_inicial %in% c("V","W","X","Y") ~ "Causas externas",
+      letra_inicial %in% c("C","D")         ~ "Neoplasias",
+      TRUE                                  ~ "Candidata"
+    )
+  )
+
+# 3) Entre las que quedaron como "Candidata", hallamos la letra más frecuente
+candidata_top_letra <- data %>%
+  filter(causa_macro == "Candidata") %>%
+  count(letra_inicial, sort = TRUE) %>%
+  slice(1) %>%
+  pull(letra_inicial)
+
+cat("La letra más frecuente en las candidatas es:", candidata_top_letra, "\n")
+
+# 4) Creamos la quinta categoría asignando esa letra a una nueva etiqueta.
+#    El resto se vuelve NA (o se filtra en el siguiente paso).
+data <- data %>%
+  mutate(
+    causa_macro = case_when(
+      # Mantener lo ya asignado
+      causa_macro != "Candidata" ~ causa_macro,
+      
+      # Si la letra_inicial es la más frecuente, crear la quinta categoría
+      letra_inicial == candidata_top_letra ~ "Quinta_categoria",
+      
+      # De lo contrario, las descartamos (pondremos NA)
+      TRUE ~ NA_character_
+    )
+  )
+
+# 5) Eliminar filas que quedaron en NA
+data <- data %>%
+  filter(!is.na(causa_macro))
+
+# Ver distribución final
+final_dist <- data %>%
+  count(causa_macro, sort = TRUE) %>%
+  mutate(pct = round(100 * n / sum(n), 2))
+
+kable(final_dist, caption = "Distribución final con 5 categorías (la 5ta es la letra sobrante más frecuente)")
+
+
+```
