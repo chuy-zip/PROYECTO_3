@@ -1,0 +1,28 @@
+---
+title: "model"
+author: "Irving, Chuy"
+date: "2025-04-29"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+library(caret)
+
+# Cargar datos balanceados
+data_balanceada <- read.csv("../defunciones_balanceadas.csv")
+
+# Partición estratificada
+set.seed(123)
+train_index <- createDataPartition(data_balanceada$causa_macro, p = 0.7, list = FALSE)
+
+train_set <- data_balanceada[train_index, ]
+test_set  <- data_balanceada[-train_index, ]
+
+prop.table(table(train_set$causa_macro))
+prop.table(table(test_set$causa_macro))
+```

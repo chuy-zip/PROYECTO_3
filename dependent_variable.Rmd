@@ -68,8 +68,7 @@ top_10_causas <- c("I219", "J189", "E149", "R98X", "X599",
                    "K746", "R99X", "R54X", "X959", "I64X")
 
 # Filtrar el dataset
-data <- data %>%
-  filter(Caudef %in% top_10_causas)
+#data <- data %>%filter(Caudef %in% top_10_causas)
 
 # Confirmar número de observaciones filtradas
 data %>%
@@ -80,39 +79,8 @@ data %>%
 
 ```
 
-```{r drownsampling, echo=FALSE}
-# Establecer el tamaño base igual al mínimo
-min_n <- data %>%
-  count(Caudef) %>%
-  pull(n) %>%
-  min()
 
-# Aplicar submuestreo para que todas las clases tengan igual número de registros
-set.seed(123)  # para reproducibilidad
-data_balanceada <- data %>%
-  group_by(Caudef) %>%
-  slice_sample(n = min_n) %>%
-  ungroup()
 
-# Verificar distribución final
-data_balanceada %>%
-  count(Caudef) %>%
-  mutate(pct = round(100 * n / sum(n), 2)) %>%
-  kable(caption = "Distribución balanceada de causas (downsampling aplicado)")
-
-```
-
-```{r to_factor, echo=FALSE}
-# Convertir la variable Caudef a factor
-data_balanceada$Caudef <- as.factor(data_balanceada$Caudef)
-
-# Verificar estructura
-str(data_balanceada$Caudef)
-
-# Visualizar niveles
-levels(data_balanceada$Caudef)
-
-```
 ```{r custom_5_auto_letter, echo=FALSE}
 library(dplyr)
 library(knitr)
@@ -135,10 +103,11 @@ data <- data %>%
 
 # 3) Entre las que quedaron como "Candidata", hallamos la letra más frecuente
 candidata_top_letra <- data %>%
-  filter(causa_macro == "Candidata") %>%
+  filter(causa_macro == "Candidata", Caudef != "Otras") %>%   # <--- agregar esto
   count(letra_inicial, sort = TRUE) %>%
   slice(1) %>%
   pull(letra_inicial)
+
 
 cat("La letra más frecuente en las candidatas es:", candidata_top_letra, "\n")
 
@@ -151,7 +120,7 @@ data <- data %>%
       causa_macro != "Candidata" ~ causa_macro,
       
       # Si la letra_inicial es la más frecuente, crear la quinta categoría
-      letra_inicial == candidata_top_letra ~ "Quinta_categoria",
+      letra_inicial == candidata_top_letra ~ "Síntomas y causas mal definidas",
       
       # De lo contrario, las descartamos (pondremos NA)
       TRUE ~ NA_character_
@@ -169,5 +138,54 @@ final_dist <- data %>%
 
 kable(final_dist, caption = "Distribución final con 5 categorías (la 5ta es la letra sobrante más frecuente)")
 
+
+```
+
+```{r drownsampling_macro, echo=FALSE}
+library(dplyr)
+library(knitr)
+
+# 1. Calcular el tamaño base igual al mínimo entre las 5 categorías
+min_n <- data %>%
+  count(causa_macro) %>%
+  pull(n) %>%
+  min()
+
+cat("El número mínimo de casos entre las 5 categorías es:", min_n, "\n")
+
+# 2. Aplicar submuestreo para que todas las categorías tengan igual número de registros
+set.seed(123)  # para reproducibilidad
+data_balanceada <- data %>%
+  group_by(causa_macro) %>%
+  slice_sample(n = min_n) %>%
+  ungroup()
+
+# 3. Verificar la distribución final
+data_balanceada %>%
+  count(causa_macro) %>%
+  mutate(pct = round(100 * n / sum(n), 2)) %>%
+  kable(caption = "Distribución balanceada de las 5 macro-categorías (downsampling aplicado)")
+
+
+```
+
+```{r to_factor, echo=FALSE}
+# Convertir la variable 'causa_macro' a factor
+data_balanceada$causa_macro <- as.factor(data_balanceada$causa_macro)
+
+# Verificar estructura
+str(data_balanceada$causa_macro)
+
+# Visualizar niveles
+levels(data_balanceada$causa_macro)
+
+
+```
+
+```{r export_data}
+# Exportar el dataset balanceado a un CSV
+write.csv(data_balanceada, "defunciones_balanceadas.csv", row.names = FALSE)
+
+cat("Archivo 'defunciones_balanceadas.csv' exportado correctamente.")
 
 ```
