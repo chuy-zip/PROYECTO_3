@@ -36,7 +36,7 @@ test_set  <- data_balanceada[-train_index, ]
 prop.table(table(train_set$causa_macro))
 prop.table(table(test_set$causa_macro))
 
-train_set
+#train_set
 
 # Eliminar variables específicas
 vars_to_remove <- c("Añoreg", "Depreg", "Mesreg", "Mredif", "Mnadif", "Perdif", "letra_inicial","Caudef")
@@ -50,12 +50,12 @@ test_set_clean <- test_set %>%
 # Verificación
 names(train_set_clean)
 
-train_set_clean
+#train_set_clean
 
 
 ```
 
-lo que hicimos fue partir los datos en entrenamiento (70%) y prueba (30%), pero de forma estratificada para que cada conjunto mantenga la misma proporción de causas de muerte (causa_macro). Usamos una semilla para que siempre salga la misma división y sea reproducible la separación. Luego, eliminamos variables que no usaremos (como años de registro, municipios redundantes, etc.) porque no aportan al modelo o pueden causar ruido. Esto lo hicimos tanto para el conjunto de entrenamiento como para el de prueba, asegurando que ambos tengan solo las columnas relevantes.Lo que pasa es que el knn es bastante sensible al ruido. 
+lo que hicimos fue partir los datos en entrenamiento (70%) y prueba (30%), pero de forma estratificada para que cada conjunto mantenga la misma proporción de causas de muerte (causa_macro). Usamos una semilla para que siempre salga la misma división y sea reproducible la separación. Luego, eliminamos variables que no usaremos (como años de registro, municipios redundantes, etc.) porque no aportan al modelo o pueden causar ruido. Esto lo hicimos tanto para el conjunto de entrenamiento como para el de prueba, asegurando que ambos tengan solo las columnas relevantes.Lo que pasa es que el knn es bastante sensible al ruido y avariables que se correlacionan demasiado. 
 
 ```{r look_atipical_data_categorical, echo=FALSE}
 
@@ -80,8 +80,9 @@ walk(cat_vars, ~print(plot_category_freq(.x)))
 
 ```
 
-Para el pre-procesamiento hay bastantes cosas a tener en cuenta. Lo primero es la ditribución de los datos. En tabla de distribución se pueden ver cosas interesantes como 
-```{r look_atipical_data_categorical, echo=FALSE}
+Para el pre-procesamiento hay bastantes cosas a tener en cuenta. Lo primero es la ditribución de los datos. En tabla de distribución se pueden ver cosas interesantes como cuales son los datos más repetidos, casos atípicos e incluso la cantidad de valores vacíós. Como se puede ver la única tabla de frecuencia con NA's es la de el nivel de escolairdad. Por lo que será necesario procesarlos. Afortunadamente, en el diccionario de variables, está definido que el valor 9 significa "Ignorado" osea que no se conoce el dato como tal. Entonces podemos reemplazar los NA con el número 9.
+
+```{r look_atipical_data_numerical, echo=FALSE}
 num_vars <- c("Diaocu", "Edadif", "Mesocu", "year")
 
 # Boxplots para detectar outliers numéricos
@@ -112,6 +113,8 @@ test_set_clean <- test_set %>%
   filter(Edadif != 999) %>% 
   select(-all_of(vars_to_remove))
 ```
+
+Ahora en el caso de las variables numéricas se evalua con casos atípicos con el diagrama de caja y bigotes. En este caso solo los años tienen casos atípicos, como vimos en el análisis exploratorio, las edades no conocidas se marcaban con 999. Evaluando vimos que dentro de los datos tan solo un 0.8% de los registros tenían una edad desconocida, por lo que decidimos remover estos casos extremos.
 
 ```{r handle_na, echo=FALSE}
 colSums(is.na(train_set_clean))
@@ -159,6 +162,10 @@ corrplot(cor_train,
          mar = c(0, 0, 1, 0))    # Márgenes del gráfico
 ```
 
+Se realizó también la tabla de correlación de variables con el fin de poder ver si el algoritmo podría verse afectado por variables altamente correlacionadas. Al final realmente hemos limitado correctamente las variables, evitando alta correlación y redundancia que ppudiera generar ruido. Habiendo terminado el Pre procesamiento ahora se puede empezar con algunas transformaciones y el entrenamiento.
+
+## Entrenamiento
+
 ```{r model_1_manualK, echo=FALSE}
 
 # 1. Convertir variables categóricas y asegurar niveles
@@ -200,7 +207,36 @@ knn_pred <- factor(knn_pred, levels = levels(train_scaled$causa_macro))
 # 7. Matriz de confusión
 confusionMatrix(knn_pred, test_scaled$causa_macro)
 
+conf_matrix_1 <- confusionMatrix(
+  knn_pred, 
+  test_scaled$causa_macro
+)
+
+# 2. Convertir a data.frame para ggplot
+conf_data1 <- as.data.frame(conf_matrix_1$table)
+
+# 3. Gráfico de matriz de confusión
+ggplot(conf_data1, aes(x = Reference, y = Prediction, fill = Freq)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = Freq), color = "black", size = 4) +
+  scale_fill_gradient(low = "white", high = "#4e79a7") +
+  labs(
+    title = "Matriz de Confusión - Modelo 3 (KNN)",
+    x = "Clase Real",
+    y = "Clase Predicha",
+    fill = "Frecuencia"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(hjust = 0.5, face = "bold")
+  )
+    
+
 ```
+
+Para este primer modelo lo que se buscó fue convertir las columnascategóricas a factores.Lo clave aquí es que forzamos al conjunto de prueba a usar los mismos niveles que el de entrenamiento, así evitamos errores raros después al momento de realizar la matriz de confusión o procesar los datos en general. Usamos un sample del data set ya que los datos son demasiado el tiempo de ejecución creacía demasiado y el debuggeo y entrenamiento se hacía demasiado largo. Pero al final conseguimos los resultados, usando una muestra que mantenía también el balance entre las clases. 
+Además de la muestra escalamos los números de las distintas columnas para que todas se encuentren en un mismo rango, algo muy importante para el algoritmo KNN.
 
 
 ```{r revision_sobreajuste_1, echo=FALSE}
@@ -225,6 +261,9 @@ cat("Accuracy en Train:", round(train_accuracy, 4),
     "\nDiferencia:", round(train_accuracy - test_accuracy, 4))
 ```
 
+Luego del entrenamiento se evalú el accuracy tanto con el set de prueba como con el set de entrenamiento. Esto con el fin de verificar la presencia de overfitting. Como podemos ver este primer modelo usando un K con la ráiz de la cantidad de registros para el entrenamiento. El desempeño realmente es un tanto bajo. Aunque bien tenemos 5 clases predictorias, en teoría si la clasificación fuera al azar, cada uno tendría un 20% de probabilidad. Técnicamente nuestra clasificación es mucho mejor que la clasificación aleatoria, alcanzando un 45% de accuracy, pero puede que hayan problemas con alguna de las clases. Al menos se puede ver que el modelo no se encuentra sobreajustado con ese parámetro de K.
+
+
 ```{r modelo2, echo=FALSE}
 # Crear submuestra del 10% para tuning rápido (manteniendo balance)
 set.seed(123)
@@ -243,7 +282,6 @@ preproc_tuning <- preProcess(train_tuning[, num_vars], method = c("center", "sca
 train_tuning_scaled <- predict(preproc_tuning, train_tuning)
 test_scaled_final <- predict(preproc_tuning, test_set_clean)  # Escalar test con parámetros de train
 
-library(caret)
 ctrl <- trainControl(
   method = "cv",      # Validación cruzada
   number = 2,         # folds
@@ -251,7 +289,7 @@ ctrl <- trainControl(
 )
 
 # Definir grilla de k's a probar
-tune_grid <- expand.grid(k = seq(25, 32, by = 2)) 
+tune_grid <- expand.grid(k = seq(25, 33, by = 2)) 
 
 # Entrenar modelo con tuning
 set.seed(123)
@@ -269,6 +307,7 @@ plot(knn_tuned)  # Ver gráfica de accuracy vs k
 print(knn_tuned$bestTune)  # Mejor k encontrado
 ```
 
+En el gráfico se puede ver una de las muchas confugraciones que fueron probada para el tuneo. Al final los mejores resultados siempre se encontraban entre 25 y 31. Luego de realizar el tuning, el valor más alto encontrado fue 31, luego de este la grafica comenzaba a descender. Con este entrenamiento el máximo de accuracy estaba alrededor de 50% variando por tan salo algunos decimales. Por lo que nuestro segundo modelo sería con K=29 con un accuracy de 50% según la gráfica. Ahora solo queda el tercer modelo, en el cual evaluamos valores cercanos o alrededor del rango del tuning para k en el segundo modelo. Los resultados fueron los siguientes.
 
 ```{r model_3_aftertunin, echo=FALSE}
 # Crear submuestra balanceada (10%) para Modelo 3
@@ -363,3 +402,8 @@ ggplot(conf_data, aes(x = Reference, y = Prediction, fill = Freq)) +
     plot.title = element_text(hjust = 0.5, face = "bold")
   )
 ```
+
+En este modelo probamos con distintos valores, incluidos el 29, pero el resultado que tenia sobre ajuste (era más de 10% de diferencia). Luego de distintas pruebas, el valor de k = 25 resultó ser bastante bueno para tener más balance entre performance y generalización. Llegando a un 47% de accuracy y reduciend la diferencia al intentar predecir con los datos del training. De igual manera, el accuracy parece ser bajo, pero el modelo al menos mejoró un poco y se redujo el sobreajuste.
+
+
+## Queda pendiente comparar las matrices de confusión y el desempeño de los 3 modelos. Además de ver la matriz y analizar donde es que se están teniendo más problemas al momento de predecir
