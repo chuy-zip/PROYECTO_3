@@ -11,6 +11,9 @@ library(dplyr)
 library(caret)
 library(ggplot2)
 library(gridExtra)
+library(class)
+library(caret)
+library(purrr)
 ```
 
 ```{r load_data, echo=FALSE}
@@ -52,6 +55,8 @@ train_set_clean
 
 ```
 
+lo que hicimos fue partir los datos en entrenamiento (70%) y prueba (30%), pero de forma estratificada para que cada conjunto mantenga la misma proporción de causas de muerte (causa_macro). Usamos una semilla para que siempre salga la misma división y sea reproducible la separación. Luego, eliminamos variables que no usaremos (como años de registro, municipios redundantes, etc.) porque no aportan al modelo o pueden causar ruido. Esto lo hicimos tanto para el conjunto de entrenamiento como para el de prueba, asegurando que ambos tengan solo las columnas relevantes.Lo que pasa es que el knn es bastante sensible al ruido. 
+
 ```{r look_atipical_data_categorical, echo=FALSE}
 
 
@@ -75,6 +80,7 @@ walk(cat_vars, ~print(plot_category_freq(.x)))
 
 ```
 
+Para el pre-procesamiento hay bastantes cosas a tener en cuenta. Lo primero es la ditribución de los datos. En tabla de distribución se pueden ver cosas interesantes como 
 ```{r look_atipical_data_categorical, echo=FALSE}
 num_vars <- c("Diaocu", "Edadif", "Mesocu", "year")
 
@@ -124,3 +130,236 @@ colSums(is.na(test_set_clean))
 
 ```
 
+```{r correlacionTable, echo=FALSE}
+# Identificar columnas numéricas (excluyendo categóricas)
+numeric_vars <- c("Diaocu", "Edadif", "Mesocu", "year") 
+
+# Filtrar datos numéricos
+train_numeric <- train_set_clean[, numeric_vars]
+test_numeric <- test_set_clean[, numeric_vars]
+
+# Correlación para train y test
+cor_train <- cor(train_numeric, use = "complete.obs") 
+cor_test <- cor(test_numeric, use = "complete.obs")
+
+# Mostrar matriz de train (ejemplo)
+print("Matriz de correlación (Train):")
+print(cor_train)
+
+library(corrplot)
+
+# Gráfico para train
+corrplot(cor_train, 
+         method = "color",         # Formato de visualización
+         type = "upper",          # Mostrar solo triángulo superior
+         tl.col = "black",        # Color de las etiquetas
+         addCoef.col = "black",   # Añadir coeficientes en negro
+         number.cex = 0.7,        # Tamaño de los números
+         title = "Correlación (Train)",
+         mar = c(0, 0, 1, 0))    # Márgenes del gráfico
+```
+
+```{r model_1_manualK, echo=FALSE}
+
+# 1. Convertir variables categóricas y asegurar niveles
+cat_vars <- c("Asist", "Depocu", "Dnadif", "Dredif", "Ecidif", "Ocur", "Sexo", "Escodif")
+train_set_clean <- train_set_clean %>% mutate(across(all_of(cat_vars), as.factor))
+test_set_clean <- test_set_clean %>% mutate(across(all_of(cat_vars), ~ factor(., levels = levels(train_set_clean[[cur_column()]]))))
+
+# 2. Muestra balanceada (opcional)
+set.seed(123)
+train_sample <- train_set_clean %>% group_by(causa_macro) %>% sample_frac(0.1) %>% ungroup()
+test_sample <- test_set_clean %>% group_by(causa_macro) %>% sample_frac(0.1) %>% ungroup()
+
+# 3. Escalar variables numéricas
+num_vars <- c("Diaocu", "Edadif", "Mesocu", "year")
+preproc <- preProcess(train_sample[, num_vars], method = c("center", "scale"))
+train_scaled <- predict(preproc, train_sample)
+test_scaled <- predict(preproc, test_sample)
+
+# 4. Asegurar que 'causa_macro' sea factor con mismos niveles
+train_scaled$causa_macro <- as.factor(train_scaled$causa_macro)
+test_scaled$causa_macro <- factor(test_scaled$causa_macro, levels = levels(train_scaled$causa_macro))
+
+# 5. Entrenar KNN
+X_train <- train_scaled %>% select(-causa_macro)
+y_train <- train_scaled$causa_macro
+X_test <- test_scaled %>% select(-causa_macro)
+
+k_manual <- round(sqrt(nrow(train_sample)))
+
+
+cat("K obtenido con la raiz de la cantidad de registros:", k_manual)
+
+set.seed(123)
+knn_pred <- knn(train = X_train, test = X_test, cl = y_train, k = k_manual)
+
+# 6. Convertir predicciones a factor
+knn_pred <- factor(knn_pred, levels = levels(train_scaled$causa_macro))
+
+# 7. Matriz de confusión
+confusionMatrix(knn_pred, test_scaled$causa_macro)
+
+```
+
+
+```{r revision_sobreajuste_1, echo=FALSE}
+# 8. Predecir sobre el conjunto de entrenamiento (para detectar overfitting)
+set.seed(123)
+knn_train_pred <- knn(
+  train = X_train,  # Mismo conjunto de entrenamiento
+  test = X_train,   
+  cl = y_train,     
+  k = k_manual      
+)
+
+# Convertir a factor
+knn_train_pred <- factor(knn_train_pred, levels = levels(train_scaled$causa_macro))
+
+# 9. Calcular accuracy en train vs test
+train_accuracy <- confusionMatrix(knn_train_pred, y_train)$overall["Accuracy"]
+test_accuracy <- confusionMatrix(knn_pred, test_scaled$causa_macro)$overall["Accuracy"]
+
+cat("Accuracy en Train:", round(train_accuracy, 4),
+    "\nAccuracy en Test:", round(test_accuracy, 4),
+    "\nDiferencia:", round(train_accuracy - test_accuracy, 4))
+```
+
+```{r modelo2, echo=FALSE}
+# Crear submuestra del 10% para tuning rápido (manteniendo balance)
+set.seed(123)
+train_tuning <- train_set_clean %>% 
+  group_by(causa_macro) %>% 
+  sample_frac(0.1) %>% 
+  ungroup()
+
+# Identificar numéricas (excluyendo 'causa_macro')
+num_vars <- c("Diaocu", "Edadif", "Mesocu", "year")
+
+# Calcular parámetros de escalamiento en train_tuning
+preproc_tuning <- preProcess(train_tuning[, num_vars], method = c("center", "scale"))
+
+# Aplicar escalamiento a train_tuning y test_set (¡importante usar mismos parámetros!)
+train_tuning_scaled <- predict(preproc_tuning, train_tuning)
+test_scaled_final <- predict(preproc_tuning, test_set_clean)  # Escalar test con parámetros de train
+
+library(caret)
+ctrl <- trainControl(
+  method = "cv",      # Validación cruzada
+  number = 2,         # folds
+  verboseIter = TRUE  # Muestra progreso
+)
+
+# Definir grilla de k's a probar
+tune_grid <- expand.grid(k = seq(25, 32, by = 2)) 
+
+# Entrenar modelo con tuning
+set.seed(123)
+knn_tuned <- train(
+  causa_macro ~ ., 
+  data = train_tuning_scaled, 
+  method = "knn", 
+  trControl = ctrl,
+  tuneGrid = tune_grid,
+  metric = "Accuracy"  # Optimizar por precisión
+)
+
+# Resultados del tuning
+plot(knn_tuned)  # Ver gráfica de accuracy vs k
+print(knn_tuned$bestTune)  # Mejor k encontrado
+```
+
+
+```{r model_3_aftertunin, echo=FALSE}
+# Crear submuestra balanceada (10%) para Modelo 3
+set.seed(123)
+train_model3_balanced <- train_set_clean %>%
+  group_by(causa_macro) %>%
+  sample_frac(0.1) %>%
+  ungroup()
+
+test_model3_balanced <- test_set_clean %>%
+  group_by(causa_macro) %>%
+  sample_frac(0.1) %>%
+  ungroup()
+
+# Verificar balanceo
+prop.table(table(train_model3_balanced$causa_macro))
+
+# Paso 1: Definir k manualmente 
+k_final <- 25
+
+# Paso 2: Escalar variables numéricas (usando solo las numéricas)
+num_vars <- c("Diaocu", "Edadif", "Mesocu", "year")
+preproc_model3 <- preProcess(train_model3_balanced[, num_vars], method = c("center", "scale"))
+
+# Aplicar escalamiento
+train_scaled_model3 <- predict(preproc_model3, train_model3_balanced)
+test_scaled_model3 <- predict(preproc_model3, test_model3_balanced)
+
+train_scaled_model3$causa_macro <- as.factor(train_scaled_model3$causa_macro)
+test_scaled_model3$causa_macro <- factor(
+  test_scaled_model3$causa_macro,
+  levels = levels(train_scaled_model3$causa_macro)  # Mismos niveles que train
+)
+
+# Separar features y target
+X_train_model3 <- train_scaled_model3 %>% select(-causa_macro)
+y_train_model3 <- train_scaled_model3$causa_macro
+X_test_model3 <- test_scaled_model3 %>% select(-causa_macro)
+
+# Entrenar KNN
+set.seed(123)
+knn_pred_model3 <- knn(
+  train = X_train_model3,
+  test = X_test_model3,
+  cl = y_train_model3,
+  k = k_final
+)
+
+# Convertir predicciones a factor
+knn_pred_model3 <- factor(knn_pred_model3, levels = levels(y_train_model3))
+
+# Matriz de confusión
+confusionMatrix(knn_pred_model3, test_scaled_model3$causa_macro)
+```
+
+
+```{r revision_sobreajuste_3, echo=FALSE}
+# Predecir sobre train (para comparar)
+knn_train_pred_model3 <- knn(
+  train = X_train_model3,
+  test = X_train_model3,
+  cl = y_train_model3,
+  k = k_final
+)
+
+# Accuracy comparativo
+cat("Accuracy en Train:", mean(knn_train_pred_model3 == y_train_model3),
+    "\nAccuracy en Test:", mean(knn_pred_model3 == test_scaled_model3$causa_macro))
+
+conf_matrix <- confusionMatrix(
+  knn_pred_model3, 
+  test_scaled_model3$causa_macro
+)
+
+# 2. Convertir a data.frame para ggplot
+conf_data <- as.data.frame(conf_matrix$table)
+
+# 3. Gráfico de matriz de confusión
+ggplot(conf_data, aes(x = Reference, y = Prediction, fill = Freq)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = Freq), color = "black", size = 4) +
+  scale_fill_gradient(low = "white", high = "#4e79a7") +
+  labs(
+    title = "Matriz de Confusión - Modelo 3 (KNN)",
+    x = "Clase Real",
+    y = "Clase Predicha",
+    fill = "Frecuencia"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(hjust = 0.5, face = "bold")
+  )
+```
