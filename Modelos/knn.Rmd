@@ -12,7 +12,6 @@ library(caret)
 library(ggplot2)
 library(gridExtra)
 library(class)
-library(caret)
 library(purrr)
 ```
 
@@ -409,3 +408,4 @@ En este modelo probamos con distintos valores, incluidos el 29, pero el resultad
 ## Queda pendiente comparar las matrices de confusión y el desempeño de los 3 modelos. Además de ver la matriz y analizar donde es que se están teniendo más problemas al momento de predecir
 
 Este análisis se encuentra en el documento de resumen de la entrega.
+

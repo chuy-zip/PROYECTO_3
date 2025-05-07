@@ -1,0 +1,277 @@
+---
+title: "random_forest"
+author: "Irving, Chuy"
+date: "2025-05-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(caret)
+library(dplyr)
+```
+
+```{r load_data, echo=FALSE}
+
+# Cargar datos 
+data_balanceada <- read.csv("../defunciones_balanceadas.csv")
+
+```
+
+```{r stratification, echo=FALSE}
+
+# Partición estratificada
+set.seed(123)
+train_index <- createDataPartition(data_balanceada$causa_macro, p = 0.7, list = FALSE)
+
+train_set <- data_balanceada[train_index, ]
+test_set  <- data_balanceada[-train_index, ]
+
+# Proporciones para verificar estratificación
+prop.table(table(train_set$causa_macro))
+prop.table(table(test_set$causa_macro))
+
+# (Opcional) Si prefieres trabajar con objetos limpios,
+train_set_clean <- train_set
+test_set_clean  <- test_set
+
+# Verificación de nombres de variables
+names(train_set)
+
+```
+
+```{r remove_atipics_fixed, include=FALSE}
+# columnas a quitar
+vars_to_remove <- c("Añoreg", "Depreg", "Mesreg", "Mredif", "Mnadif", "Perdif", "letra_inicial", "Caudef")
+
+# Filtrar Edadif != 999 en ambos sets
+train_set_clean <- train_set_clean %>% 
+  filter(Edadif != 999)
+
+test_set_clean <- test_set_clean %>% 
+  filter(Edadif != 999)
+
+# Eliminar las mismas columnas en ambos sets
+train_set_clean <- train_set_clean %>% 
+  select(-all_of(vars_to_remove))
+
+test_set_clean <- test_set_clean %>% 
+  select(-all_of(vars_to_remove))
+
+```
+
+```{r remove_NAN, include=FALSE}
+colSums(is.na(train_set_clean))
+colSums(is.na(test_set_clean))
+
+# Imputar NA en Escodif con 9 ("Ignorado")
+train_set_clean <- train_set_clean %>% 
+  mutate(Escodif = ifelse(is.na(Escodif), 9, Escodif))
+
+test_set_clean <- test_set_clean %>% 
+  mutate(Escodif = ifelse(is.na(Escodif), 9, Escodif))
+
+# ver que no queden NA
+colSums(is.na(train_set_clean))
+colSums(is.na(test_set_clean))
+```
+
+
+```{r}
+str(data_balanceada)
+```
+
+
+```{r final_preprocessing}
+library(dplyr)
+
+# 1) Columnas character comunes
+char_vars <- names(train_set_clean)[sapply(train_set_clean, is.character)]
+char_vars <- intersect(char_vars, names(test_set_clean))
+
+train_set_clean[char_vars] <- lapply(train_set_clean[char_vars], as.factor)
+test_set_clean[char_vars]  <- lapply(test_set_clean[char_vars],  as.factor)
+
+# 2) Columnas numéricas que son categorías
+for (v in c("Sexo", "Escodif", "causa_macro")) {
+  if (v %in% names(train_set_clean)) {
+    train_set_clean[[v]] <- as.factor(train_set_clean[[v]])
+    test_set_clean[[v]]  <- as.factor(test_set_clean[[v]])
+  }
+}
+
+# 3) Variables potencialmente duplicadas
+dup_vars <- c("Añoreg", "year", "Depreg", "Mesreg")
+dup_vars <- intersect(dup_vars, names(train_set_clean))
+
+# Solo eliminar si dup_vars no está vacío
+if (length(dup_vars) > 0) {
+  train_set_clean <- train_set_clean %>% select(-all_of(dup_vars))
+  test_set_clean  <- test_set_clean  %>% select(-all_of(dup_vars))
+}
+
+# 4) Estructura final
+str(train_set_clean)
+str(test_set_clean)
+
+
+```
+
+```{r training1, echo=FALSE}
+library(randomForest)
+library(caret)
+
+set.seed(123)
+
+# Entrenamiento
+rf_model <- randomForest(
+  causa_macro ~ .,
+  data       = train_set_clean,
+  ntree      = 500,
+  mtry       = floor(sqrt(ncol(train_set_clean)-1)),
+  importance = TRUE
+)
+
+# Ver resultados OOB
+print(rf_model)
+
+# Importancia de variables
+varImpPlot(rf_model)
+
+```
+
+```{r testing2, echo=FALSE}
+# Predicción
+preds <- predict(rf_model, newdata = test_set_clean)
+
+# Matriz de confusión y métricas
+conf_mat <- confusionMatrix(
+  data = preds,
+  reference = test_set_clean$causa_macro
+)
+print(conf_mat)
+
+```
+
+El modelo obtiene una exactitud global del *56.5%* y un Kappa de *0.456*, lo que muestra un nivel de acuerdo moderado más allá del azar. La matriz de confusión revela que, de las cinco categorías, `Causas externas` es la mejor predicha (sensibilidad 0.877, especificidad 0.951, balanced accuracy 0.914), mientras que `Crónicas` presenta la sensibilidad más baja (0.215) y una balanced accuracy de sólo 0.557, lo que indica una alta tasa de confusión con otras clases. Las categorías `Infecciosas`, `Neoplasias` y `Síntomas` y `causas mal definidas` muestran desempeños intermedios, con sensitivities entre 0.556 y 0.629 y balanced accuracies de 0.692, 0.757 y 0.721 respectivamente.
+
+Estos resultados sugieren que el modelo capta con fuerza los patrones asociados a eventos traumáticos (causas externas), mientras que tiene más dificultades para distinguir procesos crónicos de otras enfermedades. Las métricas de precisión (PPV) y recall (sensibilidad) para “Crónicas” resultan especialmente bajas, apuntando a la necesidad de enriquecer o transformar las características que diferencian estas enfermedades.
+
+
+```{r balance, include=FALSE}
+library(caret)
+set.seed(123)
+
+# Extraemos predictores y respuesta
+x_train <- train_set_clean %>% select(-causa_macro)
+y_train <- train_set_clean$causa_macro
+
+# Sobremuestrear las clases minoritarias
+train_balanced <- upSample(
+  x    = x_train,
+  y    = y_train,
+  yname = "causa_macro"
+)
+
+# Verificar nueva distribución
+table(train_balanced$causa_macro)
+
+```
+```{r}
+library(caret)
+
+set.seed(123)
+
+# 1) Definir estrategia de validación cruzada
+rf_ctrl <- trainControl(
+  method     = "cv",       # validación cruzada
+  number     = 5,          # 5 folds
+  search     = "grid",     # búsqueda exhaustiva en la grilla
+  classProbs = TRUE,       # para métricas basadas en prob.
+  summaryFunction = multiClassSummary
+)
+
+# 2) Crear la grilla de hiperparámetros a explorar
+#    Aquí variamos mtry; puedes añadir ntree en el train() directamente.
+mtry_vals <- floor(sqrt(ncol(train_balanced) - 1))
+rf_grid <- expand.grid(
+  mtry = seq(from = 2, to = mtry_vals + 2, by = 1)
+)
+
+# Inspeccionar
+rf_ctrl
+rf_grid
+
+```
+```{r sanitize_then_balance, echo=FALSE}
+library(caret)
+library(dplyr)
+
+# 1) Sanitizar los niveles en train_set_clean y test_set_clean
+clean_lv <- make.names(levels(train_set_clean$causa_macro))
+levels(train_set_clean$causa_macro) <- clean_lv
+levels(test_set_clean$causa_macro)  <- clean_lv
+
+# 2) Ahora sí sobremuestrear con upSample
+set.seed(123)
+train_balanced <- upSample(
+  x     = train_set_clean %>% select(-causa_macro),
+  y     = train_set_clean$causa_macro,
+  yname = "causa_macro"
+)
+
+# Verifica los niveles en el set balanceado
+levels(train_balanced$causa_macro)
+table(train_balanced$causa_macro)  # todas las clases iguales y con nombres válidos
+
+
+```
+```{r, echo=FALSE}
+library(randomForest)
+
+set.seed(456)
+
+# Segundo modelo Random Forest con parámetros ajustados
+rf_model2 <- randomForest(
+  causa_macro ~ .,
+  data       = train_set_clean,
+  ntree      = 1000,            # más árboles para estabilizar la predicción
+  mtry       = 5,               # probar un mtry distinto al sqrt(p)
+  nodesize   = 5,               # tamaño mínimo de nodo para controlar overfitting
+  sampsize   = rep(min(table(train_set_clean$causa_macro)),
+                    length(levels(train_set_clean$causa_macro))),
+  importance = TRUE
+)
+
+# Comparar rendimiento OOB
+print(rf_model2)
+
+# Nueva importancia de variables
+varImpPlot(rf_model2)
+
+
+```
+
+```{r}
+library(caret)
+
+# 1) Predecir sobre el test set
+pred2 <- predict(rf_model2, newdata = test_set_clean)
+
+# 2) Calcular matriz de confusión y métricas
+conf_mat2 <- confusionMatrix(
+  data      = pred2,
+  reference = test_set_clean$causa_macro,
+  mode      = "everything"
+)
+
+print(conf_mat2)
+
+```
+
+El modelo alcanza una exactitud global del *55.5%* en el conjunto de prueba (frente a un 20% si se adivinara siempre la clase mayoritaria) y un Kappa de *0.44*, lo que indica un acuerdo moderado más allá del azar. Aunque el desempeño es claramente superior al azar, el valor de Kappa sugiere que aún existe un nivel importante de confusión entre las categorías, por lo que el modelo no captura completamente las complejas diferencias entre los distintos tipos de causas de defunción.
+
+Al desglosar por clase vemos que `Causas externas` es el caso mejor predicho (sensibilidad 0.876, especificidad 0.950, F1 0.844), lo cual coincide con la importancia de variables como Edadif y Ocur para detectar eventos traumáticos. En cambio, la clase  `Crónicas` sufre un recall muy bajo (0.261) y un F1 de apenas 0.293, lo que indica que el modelo confunde sistemáticamente muertes por causas crónicas con otras categorías (sobre todo neoplasias y síntomas mal definidos). Las clases intermedias (`Infecciosas`, `Neoplasias`, `Síntomas` y `causas mal definidas`) muestran rendimientos correctos pero moderados (F1 entre 0.47 y 0.59), con balanced accuracy entre 0.67 y 0.75.
+
+
+
