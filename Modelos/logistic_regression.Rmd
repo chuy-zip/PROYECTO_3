@@ -1,0 +1,154 @@
+---
+title: "logistic_regression"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(caret)
+library(ggplot2)
+library(gridExtra)
+library(class)
+library(purrr)
+```
+
+```{r load_data, echo=FALSE}
+
+# Cargar datos balanceados
+data_balanceada <- read.csv("../defunciones_balanceadas.csv")
+
+```
+
+```{r processing_data, echo=FALSE}
+
+
+# Partición estratificada
+set.seed(123)
+train_index <- createDataPartition(data_balanceada$causa_macro, p = 0.7, list = FALSE)
+
+train_set <- data_balanceada[train_index, ]
+test_set  <- data_balanceada[-train_index, ]
+
+prop.table(table(train_set$causa_macro))
+prop.table(table(test_set$causa_macro))
+
+#train_set
+
+# Eliminar variables específicas
+vars_to_remove <- c("Añoreg", "Depreg", "Mesreg", "Mredif", "Mnadif", "Perdif", "letra_inicial","Caudef")
+
+train_set_clean <- train_set %>% 
+  select(-all_of(vars_to_remove))
+
+test_set_clean <- test_set %>% 
+  select(-all_of(vars_to_remove))
+
+# Verificación
+names(train_set_clean)
+
+#train_set_clean
+
+
+```
+
+```{r handle_outliers, echo=FALSE}
+edad_anomalas <- sum(train_set_clean$Edadif == 999, na.rm = TRUE)
+total_registros <- nrow(train_set_clean)
+
+cat("Registros con Edadif en train = 999:", edad_anomalas, 
+    "\nPorcentaje del total:", round(edad_anomalas / total_registros * 100, 2), "%")
+
+edad_anomalas <- sum(test_set_clean$Edadif == 999, na.rm = TRUE)
+total_registros <- nrow(test_set_clean)
+
+cat("Registros con Edadif en test = 999:", edad_anomalas, 
+    "\nPorcentaje del total:", round(edad_anomalas / total_registros * 100, 2), "%")
+
+train_set_clean <- train_set_clean %>% 
+  filter(Edadif != 999)
+
+test_set_clean <- test_set %>% 
+  filter(Edadif != 999) %>% 
+  select(-all_of(vars_to_remove))
+```
+
+```{r handle_na, echo=FALSE}
+colSums(is.na(train_set_clean))
+colSums(is.na(test_set_clean))
+
+# Imputar NA en Escodif con 9 ("Ignorado")
+train_set_clean <- train_set_clean %>% 
+  mutate(Escodif = ifelse(is.na(Escodif), 9, Escodif))
+
+test_set_clean <- test_set_clean %>% 
+  mutate(Escodif = ifelse(is.na(Escodif), 9, Escodif))
+
+# ver que no queden NA
+colSums(is.na(train_set_clean))
+colSums(is.na(test_set_clean))
+
+```
+
+```{r logistic_regression_model1, echo=FALSE}
+
+# Convertir variables categóricas a factores (incluyendo la variable objetivo)
+cat_vars <- c("Asist", "Depocu", "Dnadif", "Dredif", "Ecidif", "Ocur", "Sexo", "Escodif")
+train_set_clean <- train_set_clean %>% 
+  mutate(across(all_of(cat_vars), as.factor)) %>%
+  mutate(causa_macro = factor(causa_macro))  # Asegurar que sea factor
+
+test_set_clean <- test_set_clean %>% 
+  mutate(across(all_of(cat_vars), ~factor(., levels = levels(train_set_clean[[cur_column()]])))) %>%
+  mutate(causa_macro = factor(causa_macro, levels = levels(train_set_clean$causa_macro)))
+
+set.seed(123)
+train_sample <- train_set_clean %>% 
+  group_by(causa_macro) %>% 
+  sample_frac(0.1) %>% 
+  ungroup()
+
+formula <- as.formula(paste("causa_macro ~", 
+                           paste(names(train_sample)[!names(train_sample) %in% c("causa_macro")], 
+                           collapse = " + ")))
+
+# Entrenar modelo confamilia multinomial para >2 clases
+library(nnet)
+set.seed(123)
+modelo_logit <- multinom(
+  formula,
+  data = train_sample,
+  maxit = 1000,  # iteracinones
+  decay = 0.01,   # regularizacion
+  trace = FALSE   
+)
+
+#coeficientes por clase
+# summary(modelo_logit) 
+
+
+# Predecir en test 
+test_complete <- test_set_clean[complete.cases(test_set_clean), ]
+predicciones <- predict(modelo_logit, newdata = test_complete)
+
+# Matriz de confusión formateada
+conf_matrix <- confusionMatrix(
+  factor(predicciones, levels = levels(train_sample$causa_macro)),
+  factor(test_complete$causa_macro, levels = levels(train_sample$causa_macro))
+)
+
+#matriz
+
+ggplot(as.data.frame(conf_matrix$table), 
+       aes(x = Reference, y = Prediction, fill = Freq)) +
+  geom_tile() +
+  geom_text(aes(label = Freq), color = "white") +
+  scale_fill_gradient(low = "lightblue", high = "navy") +
+  labs(title = "Matriz de Confusión - Regresión Logística",
+       x = "Real", y = "Predicho") +
+  theme_minimal()
+
+# algunas metrcas
+cat("Accuracy global:", round(conf_matrix$overall["Accuracy"], 3), "\n")
+print(conf_matrix$byClass[, c("Sensitivity", "Specificity", "F1")])
+```

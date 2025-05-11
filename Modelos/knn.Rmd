@@ -59,7 +59,7 @@ lo que hicimos fue partir los datos en entrenamiento (70%) y prueba (30%), pero 
 ```{r look_atipical_data_categorical, echo=FALSE}
 
 
-# Variables categóricas (basado en tu metadata)
+# Variables categóricas 
 cat_vars <- c("Asist", "Depocu", "Dnadif", "Dredif", "Ecidif", "Ocur", "Sexo", "Escodif")
 
 # Función para graficar frecuencias de categorías
