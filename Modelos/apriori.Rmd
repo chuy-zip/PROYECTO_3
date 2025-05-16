@@ -1,0 +1,200 @@
+---
+title: "Apriori"
+output: html_document
+date: "2025-05-16"
+---
+``` {r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# Librerías necesarias
+library(arules)
+library(arulesViz)
+library(dplyr)
+library(readr)
+``` 
+
+``` {r, echo = FALSE}
+
+# Cargar dataset
+datos <- read_csv("../defunciones_balanceadas.csv")
+
+# Visualizar encabezados y tipo de datos
+str(datos)
+``` 
+
+``` {r Procesamiento, echo = FALSE}
+# Seleccionar columnas categóricas relevantes para asociaciones
+datos_apriori <- datos %>%
+  select(Sexo, Edadif, Escodif, Depreg, Mesocu, Caudef, causa_macro)
+
+# Convertir a factor
+datos_apriori <- datos_apriori %>% mutate(across(everything(), as.factor))
+
+# Opcional: resumen de niveles
+summary(datos_apriori)
+
+# Convertir a transacciones
+transacciones <- as(datos_apriori, "transactions")
+
+# Verificar transacciones
+inspect(head(transacciones, 5))
+```
+
+```{r aplicacion de algoritmo, echo=FALSE}
+# Modelo 1: Soporte bajo, confianza media
+modelo1 <- apriori(transacciones,
+                    parameter = list(supp = 0.01, conf = 0.5, minlen = 2))
+
+# Modelo 2: Soporte medio, confianza alta
+modelo2 <- apriori(transacciones,
+                    parameter = list(supp = 0.05, conf = 0.7, minlen = 2))
+
+# Modelo 3: Soporte más bajo, confianza media-alta (ajustado)
+modelo3 <- apriori(transacciones,
+                    parameter = list(supp = 0.02, conf = 0.65, minlen = 2))
+
+# Mostrar cantidad de reglas encontradas
+cat("Reglas modelo1:", length(modelo1), "\n")
+cat("Reglas modelo2:", length(modelo2), "\n")
+cat("Reglas modelo3:", length(modelo3), "\n")
+```
+
+``` {r, visualizacion Resultados, echo=FALSE}
+# Función para inspeccionar reglas de forma segura
+inspeccionar_top_lift <- function(modelo, n = 10) {
+  if (length(modelo) > 0) {
+    top_rules <- sort(modelo, by = "lift")
+    num_rules <- length(top_rules)
+    to_inspect <- min(n, num_rules)
+    if (to_inspect > 0) {
+      inspect(top_rules[1:to_inspect])
+    } else {
+      cat("No se encontraron reglas para inspeccionar.\n")
+    }
+  } else {
+    cat("El modelo no generó ninguna regla.\n")
+  } 
+}
+
+# Inspeccionar los top 10 reglas por lift para cada modelo (si existen)
+cat("\nTop 10 reglas por Lift - Modelo 1:\n")
+inspeccionar_top_lift(modelo1)
+
+cat("\nTop 10 reglas por Lift - Modelo 2:\n")
+inspeccionar_top_lift(modelo2)
+
+cat("\nTop 10 reglas por Lift - Modelo 3:\n")
+inspeccionar_top_lift(modelo3)
+
+# Visualización (puedes elegir el modelo con reglas significativas)
+# Visualizacion modelo 1
+if (length(modelo1) > 0) {
+  plot(modelo2, method = "graph", control = list(type = "items"))
+} else {
+  cat("\nNo se generaron suficientes reglas en modelo2 para la visualización.\n")
+}
+
+#visualizacion moodelo2
+if (length(modelo2) > 0) {
+  plot(modelo2, method = "graph", control = list(type = "items"))
+} else {
+  cat("\nNo se generaron suficientes reglas en modelo2 para la visualización.\n")
+} 
+
+#visualizacion modelo3
+if (length(modelo3) > 0) {
+  plot(modelo2, method = "graph", control = list(type = "items"))
+} else {
+  cat("\nNo se generaron suficientes reglas en modelo2 para la visualización.\n")
+}
+
+# Resúmenes de los modelos
+cat("\nResumen Modelo 1:\n")
+summary(modelo1)
+cat("\nResumen Modelo 2:\n")
+summary(modelo2)
+cat("\nResumen Modelo 3:\n")
+summary(modelo3)
+
+```
+
+## 🧠 Análisis de Resultados del Algoritmo Apriori
+
+### ✅ Coherencia de los Resultados
+
+Los resultados obtenidos mediante el algoritmo Apriori aplicado al conjunto de datos de defunciones son coherentes. Se utilizaron tres modelos con diferentes combinaciones de soporte y confianza, lo que permitió obtener conjuntos de reglas variados y contrastar su utilidad. Las reglas encontradas presentan patrones lógicos y permiten identificar relaciones relevantes entre variables demográficas y causas de muerte, lo cual es valioso para generar conocimiento y apoyar decisiones de salud pública.
+
+### 📊 ¿Qué es el Lift?
+
+El **lift** mide cuánto más probable es que se presente una consecuencia (RHS) dado un antecedente (LHS), en comparación con lo que se esperaría por azar.
+
+- Un **lift > 1** indica una asociación positiva.
+- Cuanto **mayor sea el lift**, más fuerte es la asociación.
+- Un **lift cercano a 1** indica independencia.
+
+**Ejemplo**: Si una regla tiene un lift de 2.5, quiere decir que la combinación de condiciones tiene 2.5 veces más probabilidad de generar el resultado que si ocurriera de forma independiente.
+
+---
+
+### ⚙️ Resumen de Modelos Apriori Aplicados
+
+#### 🔧 Modelo 1 (564 reglas)
+- **Soporte mínimo**: 0.01  
+- **Confianza mínima**: 0.5  
+- **Tamaño de reglas**: 139 de largo 2, 304 de largo 3, 121 de largo 4  
+- **Lift promedio**: 2.41 (máximo: 10.52)  
+- **Confianza promedio**: 0.73  
+- **Soporte promedio**: 0.026  
+- Este modelo genera muchas reglas con buena confianza y diversidad en el tamaño de las reglas. Es útil para análisis exploratorios más amplios.
+
+#### 🔧 Modelo 2 (21 reglas)
+- **Soporte mínimo**: 0.05  
+- **Confianza mínima**: 0.7  
+- **Tamaño de reglas**: 13 de largo 2, 8 de largo 3  
+- **Lift promedio**: 3.47 (máximo: 5.00)  
+- **Confianza promedio**: 0.92  
+- **Soporte promedio**: 0.073  
+- Este modelo es el más preciso: pocas reglas, pero todas con muy alta calidad. Ideal para aplicaciones donde se requiere máxima certeza.
+
+#### 🔧 Modelo 3 (120 reglas)
+- **Soporte mínimo**: 0.02  
+- **Confianza mínima**: 0.65  
+- **Tamaño de reglas**: 32 de largo 2, 72 de largo 3, 16 de largo 4  
+- **Lift promedio**: 3.56 (máximo: 10.51)  
+- **Confianza promedio**: 0.91  
+- **Soporte promedio**: 0.038  
+- Este modelo es un buen compromiso entre cantidad de reglas y calidad, con reglas más variadas y lift bastante elevado.
+
+---
+
+### ⭐ Selección del Mejor Modelo
+
+Se seleccionó el **Modelo 2** como el más óptimo, ya que ofrece el mejor equilibrio entre precisión (alta confianza y lift) y simplicidad. Aunque genera menos reglas, estas son más confiables y fáciles de interpretar. Es ideal para aplicaciones prácticas donde se requiere tomar decisiones basadas en reglas sólidas, aunque el Modelo 3 también es competitivo si se busca más cobertura.
+
+---
+
+## 📈 Visualización de Reglas con arulesViz
+
+```{r visualizar_reglas_apriori, warning=FALSE, message=FALSE}
+library(arulesViz)
+
+# Visualización gráfica del modelo 2 (modelo seleccionado)
+plot(modelo2, method = "graph", engine = "htmlwidget")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
