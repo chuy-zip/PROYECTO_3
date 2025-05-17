@@ -13,6 +13,7 @@ library(class)
 library(purrr)
 library(nnet)
 library(knitr)
+library(kableExtra)
 ```
 
 ```{r load_data, echo=FALSE}
@@ -155,6 +156,14 @@ cat("Accuracy global:", round(conf_matrix$overall["Accuracy"], 3), "\n")
 print(conf_matrix$byClass[, c("Sensitivity", "Specificity", "F1")])
 ```
 
+El primer modelo nos dio un accuracy global del 53.2%, lo cual, considerando que estamos trabajando con cinco clases balanceadas, supera el 20% que obtendríamos con predicciones al azar. Sin embargo, al analizar las métricas por clase, encontramos diferencias importantes en el desempeño del modelo. Para la categoría Causas externas el modelo mostró un buen rendimiento con un F1 de 0.81, mientras que para las Crónicas el desempeño fue considerablemente menor con solo 0.22 de F1.
+
+Estas diferencias nos indican que el modelo tiene mayor facilidad para identificar patrones en ciertos tipos de defunción que en otros. Las causas externas, que incluyen accidentes y violencia, probablemente tienen perfiles demográficos más definidos que las enfermedades crónicas. Por otro lado, las categorías de Infecciosas, Neoplasias y Síntomas mal definidas tuvieron un desempeño intermedio, con valores de F1 alrededor de 0.5 a 0.55. Estas no fueron tan buenas clasificando, pero si mejores que las enfermedades crónicas.
+
+La matriz de confusión nos revela detalles importantes sobre los errores más comunes. Podemos observar que el modelo también tiene problemas específicamente con las enfermedades crónicas y neoplásias, siendo esta la principal fuente de error. Esto ya había ocurrido antes, por lo que nos ayuda a demostrar que en efecto en modelos anteriores, el error no era como tal el procesamiento o configuración de entrenamiento sino la propia naturaleza de los datos. Estos errores podrían deberse a que algunas características demográficas de estos grupos se traslapan, haciendo más difícil su diferenciación en algunas causas de defunción específicas.
+
+Aunque el accuracy del 53% puede parecer bajo a primera vista, debemos considerar la complejidad del problema. Clasificar causas de defunción es complejo porque muchos factores demográficos pueden estar presentes en múltiples categorías. El modelo logístico, a pesar de su simplicidad, nos ha dad una buena base solida comparable con el resto de modelos con otros algorítmos empleados hasta el momento.
+
 ```{r logistic_regression_model2, echo=FALSE}
 set.seed(123)
 train_sample_v2 <- train_set_clean %>% 
@@ -242,21 +251,122 @@ print(plot_test)
 
 # Tabla resumen de métricas globales train v test
 
-resultados <- data.frame(
-  Dataset = c("Train", "Test"),
-  Accuracy = c(conf_train$overall["Accuracy"], conf_test$overall["Accuracy"]),
-  Kappa = c(conf_train$overall["Kappa"], conf_test$overall["Kappa"]),
-  Diferencia_Accuracy = c(NA, conf_train$overall["Accuracy"] - conf_test$overall["Accuracy"])
+resultados_modelo2 <- data.frame(
+  Modelo = "2",
+  Train_Accuracy = round(conf_train$overall["Accuracy"], 3),
+  Test_Accuracy = round(conf_test$overall["Accuracy"], 3),
+  Diferencia = round(conf_train$overall["Accuracy"] - conf_test$overall["Accuracy"], 3),
+  Kappa = round(conf_test$overall["Kappa"], 3)
 )
 
-kable(resultados, digits = 3, caption = "Comparación de Métricas Globales")
+kable(resultados_modelo2, align = 'c', 
+      caption = "Comparación de Métricas Globales - Modelo 2") %>%
+  kable_styling(
+    full_width = FALSE,
+    bootstrap_options = c("striped", "hover")
+  ) %>%
+  row_spec(0, bold = TRUE, color = "black", background = "#f8f9fa") %>%
+  column_spec(2:5, background = "#f8f9fa") %>%
+  footnote(
+    general = "Diferencia = Train Accuracy - Test Accuracy",
+    general_title = "Nota:"
+  )
 
-# Métricas por clase (F1, Sensibilidad, Especificidad)
-metrics_by_class <- rbind(
-  "Train" = conf_train$byClass[, c("Sensitivity", "Specificity", "F1")],
-  "Test" = conf_test$byClass[, c("Sensitivity", "Specificity", "F1")]
-)
+# tabla metricas test
 
-kable(metrics_by_class, digits = 2, caption = "Métricas por Clase")
+metrics_by_class_modelo2 <- conf_test$byClass[, c("Sensitivity", "Specificity", "F1")]
+
+kable(metrics_by_class_modelo2, digits = 3,
+      caption = "Métricas por Clase (Test) - Modelo 2",
+      col.names = c("Sensibilidad", "Especificidad", "F1-Score")) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "condensed"),
+    full_width = FALSE
+  ) %>%
+  row_spec(1:nrow(metrics_by_class_modelo2), 
+    background = ifelse(metrics_by_class_modelo2[, "F1"] < 0.5, "#fff3cd", "#ffffff")) %>%
+  column_spec(4, bold = TRUE)  # Destacar columna F1
 ```
 
+```{r logistic_regression_model3}
+# etse modelo es más que todo para probar nuevos parámetros luego de corroborar que 
+# no tenemos sobre ajuste con el modelo 2
+
+set.seed(123)
+train_sample_v3 <- train_set_clean %>% 
+  group_by(causa_macro) %>% 
+  sample_frac(0.10) %>% 
+  ungroup()
+
+# Modelo con parámetros optimizados
+set.seed(123)
+modelo_logit_v3 <- multinom(
+  causa_macro ~ .,
+  data = train_sample_v3,
+  maxit = 2000,     # Más iteraciones para convergencia
+  decay = 0.00,     # Regularización ligeramente menor
+  trace = FALSE
+)
+
+# TEST
+pred_test_v3 <- predict(modelo_logit_v3, newdata = test_set_clean)
+conf_test_v3 <- confusionMatrix(
+  factor(pred_test_v3, levels = levels(train_sample_v3$causa_macro)),
+  test_set_clean$causa_macro
+)
+
+# TRAIN
+pred_train_v3 <- predict(modelo_logit_v3, newdata = train_sample_v3)
+conf_train_v3 <- confusionMatrix(
+  pred_train_v3,
+  train_sample_v3$causa_macro
+)
+
+
+# matrices de confusión
+plot_conf_matrix_v2 <- function(conf_matrix, title) {
+  ggplot(as.data.frame(conf_matrix$table), 
+         aes(x = Reference, y = Prediction, fill = Freq)) +
+    geom_tile(alpha = 0.9) +
+    geom_text(aes(label = Freq), color = "white", size = 4, fontface = "bold") +
+    scale_fill_gradient(low = "lightblue", high = "navy") +
+    labs(
+      title = paste(title, "\nAccuracy:", round(conf_matrix$overall["Accuracy"], 3)),
+      x = "Real",
+      y = "Predicho"
+    ) +
+    theme_minimal(base_size = 12) +
+    theme(
+      plot.title = element_text(hjust = 0.5, face = "bold"),
+      axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)
+    )
+}
+
+# Mostrar matrices
+plot_train_v3 <- plot_conf_matrix_v2(conf_train_v3, "Train - Modelo 3")
+plot_test_v3 <- plot_conf_matrix_v2(conf_test_v3, "Test - Modelo 3")
+
+print(plot_train_v3)
+print(plot_test_v3)
+
+#comparacion
+
+resultados_v3 <- data.frame(
+  Modelo = "3",
+  Train_Accuracy = round(conf_train_v3$overall["Accuracy"], 3),
+  Test_Accuracy = round(conf_test_v3$overall["Accuracy"], 3),
+  Diferencia = round(conf_train_v3$overall["Accuracy"] - conf_test_v3$overall["Accuracy"], 3),
+  Kappa = round(conf_test_v3$overall["Kappa"], 3)
+)
+
+kable(resultados_v3, align = 'c') %>%
+  kable_styling(full_width = FALSE) %>%
+  row_spec(0, bold = TRUE) %>%
+  column_spec(2:5, background = "#f8f9fa")
+
+# Métricas por clase (Test)
+kable(conf_test_v3$byClass[, c("Sensitivity", "Specificity", "F1")], 
+      digits = 3,
+      caption = "Métricas por Clase (Test)") %>%
+  kable_styling(bootstrap_options = "striped")
+```
