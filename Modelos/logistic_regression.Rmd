@@ -288,7 +288,13 @@ kable(metrics_by_class_modelo2, digits = 3,
   column_spec(4, bold = TRUE)  # Destacar columna F1
 ```
 
-```{r logistic_regression_model3}
+El segundo modelo mostró un comportamiento particularmente interesante. Con un accuracy del 52.9% en el conjunto de prueba y apenas 0.8% de diferencia con el accuracy de entrenamiento (53.7%), estamos ante un modelo notablemente robusto. Esta mínima diferencia entre train y test nos indica que el modelo generaliza muy bien, sin presentar problemas de sobreajuste a pesar de su mayor complejidad.
+
+Al analizar las métricas por clase, observamos patrones consistentes con el primer modelo, pero con algunas mejoras sutiles. Las Causas externas mantuvieron su alto desempeño con F1 de 0.81, confirmando que son las más fácilmente identificables. Sin embargo, el verdadero valor de este modelo se aprecia en su estabilidad: las métricas por clase apenas variaron entre train y test, con diferencias menores al 2% en todos los casos. Aunque las clases Crónicas siguen siendo las más difíciles de predecir con un F1 de 0.22, la pequeña diferencia entre conjuntos indica que no estamos ante un problema de sobreajuste, sino de limitaciones de los datos. Esto también se puede ver claramente en las matrices de confusión con los colores. Los datos y predicciones mantienen la misma apariencia y desempeño que el modelo anterior.
+
+El éxito de este modelo radica en el balance que encontramos entre complejidad y generalización. Al incrementar ligeramente las iteraciones de 1500 vs 1000 del primer modelo y ajustar la regularización decay=0.05, logramos un modelo que mantiene el porcentaj de predicción sin sacrificar confiabilidad. El accuracy es tan solo un poco menos que el modelo 1, pero confirmamos no tener sobre ajuste. Antes se tuvo 53% y ahora con este modelo 52.9%, realmente la perdida es mínima.
+
+```{r logistic_regression_model3, echo=FALSE}
 # etse modelo es más que todo para probar nuevos parámetros luego de corroborar que 
 # no tenemos sobre ajuste con el modelo 2
 
@@ -304,7 +310,7 @@ modelo_logit_v3 <- multinom(
   causa_macro ~ .,
   data = train_sample_v3,
   maxit = 2000,     # Más iteraciones para convergencia
-  decay = 0.00,     # Regularización ligeramente menor
+  decay = 0.003,     # Regularización ligeramente menor
   trace = FALSE
 )
 
@@ -370,3 +376,19 @@ kable(conf_test_v3$byClass[, c("Sensitivity", "Specificity", "F1")],
       caption = "Métricas por Clase (Test)") %>%
   kable_styling(bootstrap_options = "striped")
 ```
+
+El tercer modelo nos revela un patrón importante, hemos alcanzado un techo predictivo alrededor del 53-54% de accuracy, a pesar de los ajustes realizados. Este modelo, con su mayor número de iteraciones (2000) y menor regularización con decay=0.003, logró el mejor accuracy hasta ahora con el set de datos de prueba con un 53.3%, pero confirmó que existen límites en nuestros datos. La diferencia entre train de 54.4% y test (53.3%) se mantuvo en un excelente 1.1%, demostrando que el modelo sigue siendo robusto.
+
+Los resultados por clase muestran un patrón consistente con los modelos anteriores. Las causas externas mantienen un F1 alto (0.81), mientras las Crónicas persisten como la categoría más difícil de predecir (F1 de 0.22). Esta consistencia a través de múltiples modelos sugiere que no es un problema de ajuste, sino de información. Las variables demográficas que tenemos simplemente no contienen suficiente poder para diferenciar para ciertas categorías de razones de defunción.
+
+El valor del Kappa (0.41) nos indica que el modelo supera significativamente la predicción al azar, pero también revela las limitaciones del conjunto de datos.
+
+Curiosamente, el modelo mostró pequeñas mejoras en Síntomas mal definidas (F1 de 0.536 vs 0.524 en el modelo 2) al relajar la regularización, sugiriendo que patrones más complejos existen para esta categoría. Sin embargo, luego de probar distintas configuraciones si se relaja demasiado este parámetro el modelo pierde gradualmente robustez, separando su accuracy entre training y testin al predecir.
+
+
+## El mejor modelo de predicción y clasificación utilizando regresión lo gística
+
+El tercer modelo es claramente el mejor entre los evaluados, no solo por alcanzar el mayor accuracy con 53.3% en test, sino por su equilibrio entre capacidad predictiva y generalización. Aunque la mejora numérica parece poca con +0.4% vs el Modelo 2, su diseño con menor regularización (decay=0.003) y más iteraciones (2000) permitió capturar más patrones complejos sin sacrificar robustez, evidenciado por la mínima diferencia train-test con un 1.1%. Además, mostró mejoras específicas en categorías desafiantes como Síntomas mal definidas, donde incrementó el F1 en 1.2 puntos porcentuales respecto al Modelo 2, demostrando su capacidad para refinar predicciones en más casos.
+
+Además de las métricas, el Modelo 3 nos termina de confirmar insights valiosos sobre los límites y potenciales de los datos. Su estabilidad confirma que las variables disponibles tienen aparentemente un techo predictivo alrededor del 53-54%, pero también que este rendimiento es consistente y confiable. Esta configuación se alcanzó luego de varias pruebas para mantener el desempeño y minimizar el riesgo de sobreajuste. Para contextos operativos, este modelo proporciona la mejor base para decisiones preliminares, destacándose como la versión más madura y técnicamente fundamentada de nuestra exploración con regresión logística multinomial.
+
